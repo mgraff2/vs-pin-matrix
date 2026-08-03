@@ -296,10 +296,10 @@ namespace PinMatrix
             c.AddMultiSelectDropDown(colorHexes, colorNames, 0, OnColorFilterChanged, EB(233, y, 145, 28), "colorfilter");
 
             c.AddSwitch(OnPinnedOnlyToggled, EB(390, y, 28, 28), "pinnedonly", 25, 3);
-            c.AddStaticText("Pinned only", font, EB(423, y + 4, 82, 25));
-            c.AddStaticText("Within", font, EB(515, y + 4, 46, 25));
-            c.AddNumberInput(EB(563, y, 72, 28), OnRadiusChanged, font, "radius");
-            c.AddStaticText("blocks", font, EB(641, y + 4, 60, 25));
+            c.AddStaticText("Pinned only", font, EB(423, y + 4, 110, 25));
+            c.AddStaticText("Within", font, EB(541, y + 4, 46, 25));
+            c.AddNumberInput(EB(589, y, 72, 28), OnRadiusChanged, font, "radius");
+            c.AddStaticText("blocks", font, EB(667, y + 4, 60, 25));
 
             // icon filter strip (click icons to toggle; multi-select)
             y += 36;
