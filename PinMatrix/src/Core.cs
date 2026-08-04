@@ -91,11 +91,13 @@ namespace PinMatrix
             => $"/waypoint addati {SafeIcon(wp.Icon)} {F(relX)} {F(wp.Position.Y)} {F(relZ)} {(wp.Pinned ? "true" : "false")} {ColorHex(wp.Color)} {ShareSafeTitle(wp.Title)}";
 
         /// <summary>
-        /// One chat line: human-readable part first, then the command so anyone can copy it.
-        /// Format is load-bearing — ChatShareLinks parses it on receiving clients.
+        /// One chat line: readable name + coords, then a compact "| icon #hex [pinned]" tail.
+        /// The tail is the only channel for the pin's look — the server strips VTML from player
+        /// chat and does not relay hidden data, so anything the clickable link should reproduce
+        /// must ride in the visible text. Format is load-bearing — ChatShareLinks parses it.
         /// </summary>
-        public static string ShareLine(Waypoint wp, string relCoords, string command)
-            => $"{ShareMarker} {ShareSafeTitle(wp.Title)} ({relCoords}) | add: {command}";
+        public static string ShareLine(Waypoint wp, string relCoords)
+            => $"{ShareMarker} {ShareSafeTitle(wp.Title)} ({relCoords}) | {SafeIcon(wp.Icon)} {ColorHex(wp.Color)}{(wp.Pinned ? " pinned" : "")}";
     }
 
     /// <summary>Read access to the client's waypoint layer plus spawn-relative coordinate conversion.</summary>

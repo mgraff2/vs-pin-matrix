@@ -798,7 +798,7 @@ namespace PinMatrix
             => WpCommands.ShareCommand(wp, svc.RelX(wp.Position.X), svc.RelZ(wp.Position.Z));
 
         string ShareChatLine(Waypoint wp)
-            => WpCommands.ShareLine(wp, ShareRelCoords(wp), ShareCmd(wp));
+            => WpCommands.ShareLine(wp, ShareRelCoords(wp));
 
         void ComposeShare(GuiComposer c)
         {
@@ -817,13 +817,13 @@ namespace PinMatrix
             c.AddStaticText($"Share '{WpCommands.ShareSafeTitle(wp.Title)}' ({ShareRelCoords(wp)})", CairoFont.WhiteSmallishText(), EB(4, y, DW, 28));
             y += 36;
 
-            c.AddStaticText("Chat message (players who also run Pin Matrix get a clickable add-link; everyone else sees this text and can copy the command from it):", font, EB(4, y, DW, 44));
+            c.AddStaticText("Chat message (players who also run Pin Matrix get a clickable add-link; everyone else sees the name, coordinates, icon and color):", font, EB(4, y, DW, 44));
             y += 48;
             c.AddInset(EB(2, y - 2, DW + 4, 48), 3);
             c.AddStaticText(ShareChatLine(wp), font, EB(8, y + 2, DW - 12, 44));
             y += 56;
 
-            c.AddStaticText("Add command (paste in Discord etc. — running it in chat re-creates this exact pin):", font, EB(4, y, DW, 25));
+            c.AddStaticText("Add command for Discord etc. (recipients paste it into their chat box — running it re-creates this exact pin):", font, EB(4, y, DW, 25));
             y += 28;
             c.AddInset(EB(2, y - 2, DW + 4, 48), 3);
             c.AddStaticText(ShareCmd(wp), font, EB(8, y + 2, DW - 12, 44));

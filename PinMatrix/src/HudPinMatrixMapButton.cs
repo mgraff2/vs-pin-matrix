@@ -24,6 +24,12 @@ namespace PinMatrix
             Compose();
         }
 
+        public int CurrentRightMargin => rightMargin;
+        public int CurrentYOffset => yOffset;
+
+        /// <summary>Back to the preferred top slot; called when the map (re)opens so hysteresis starts fresh.</summary>
+        public void ResetOffset() => SetOffset(DefaultRightMargin, DefaultYOffset);
+
         /// <summary>Moves the button (used to dodge other map-screen panels: layer filters, other mods' dialogs).</summary>
         public void SetOffset(int fromRight, int fromTop)
         {

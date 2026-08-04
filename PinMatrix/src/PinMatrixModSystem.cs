@@ -57,8 +57,16 @@ namespace PinMatrix
             if (fullMapOpen)
             {
                 if (mapButton == null) mapButton = new HudPinMatrixMapButton(capi, OpenFromMapButton);
-                PositionMapButton();
-                if (!mapButton.IsOpened()) mapButton.TryOpen();
+                if (!mapButton.IsOpened())
+                {
+                    mapButton.ResetOffset();    // each map-open starts from the preferred slot
+                    PositionMapButton();
+                    mapButton.TryOpen();
+                }
+                else
+                {
+                    PositionMapButton();
+                }
             }
             else if (mapButton != null && mapButton.IsOpened())
             {
@@ -98,6 +106,28 @@ namespace PinMatrix
                 }
             }
 
+            bool Clear(double x, double y)
+            {
+                foreach (var o in obstacles)
+                {
+                    bool apart = x + w <= o[0] || o[0] + o[2] <= x || y + h <= o[1] || o[1] + o[3] <= y;
+                    if (!apart) return false;
+                }
+                return true;
+            }
+
+            // Hysteresis: while the current slot stays clear, never move. Re-picking the topmost
+            // free slot every tick caused a visible bounce against HUDs whose bounds change
+            // periodically (e.g. the vanilla coordinate box recomposes to the text width as the
+            // player moves) — freeing and re-blocking the top slot several times a second. A
+            // button that only ever moves when actually overlapped cannot oscillate, whatever
+            // other mods' HUDs do. ResetOffset() on map-open restores the preferred slot.
+            {
+                double curX = screenW - GuiElement.scaled(mapButton.CurrentRightMargin) - w;
+                double curY = GuiElement.scaled(mapButton.CurrentYOffset);
+                if (curX >= 0 && curY + h <= screenH && Clear(curX, curY)) return;
+            }
+
             // First free slot wins: down the right edge, then a second column further left
             foreach (int rightUnscaled in new[] { HudPinMatrixMapButton.DefaultRightMargin, 320, 540 })
             {
@@ -109,20 +139,15 @@ namespace PinMatrix
                     double y = GuiElement.scaled(yUnscaled);
                     if (y + h > screenH) break;
 
-                    bool clear = true;
-                    foreach (var o in obstacles)
-                    {
-                        bool apart = x + w <= o[0] || o[0] + o[2] <= x || y + h <= o[1] || o[1] + o[3] <= y;
-                        if (!apart) { clear = false; break; }
-                    }
-                    if (clear)
+                    if (Clear(x, y))
                     {
                         mapButton.SetOffset(rightUnscaled, yUnscaled);
                         return;
                     }
                 }
             }
-            mapButton.SetOffset(HudPinMatrixMapButton.DefaultRightMargin, HudPinMatrixMapButton.DefaultYOffset);
+            // No slot is clear: stay where we are — jumping to the default slot would guarantee
+            // an overlap AND another jump next tick.
         }
 
         void OpenFromMapButton()
