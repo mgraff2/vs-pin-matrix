@@ -58,6 +58,44 @@ namespace PinMatrix
 
         /// <summary>/waypoint remove [index] — index-based; bulk removals must run in descending index order.</summary>
         public static string Remove(int index) => $"/waypoint remove {index}";
+
+        // ---- sharing ----
+
+        /// <summary>Marker prefix that lets receiving Pin Matrix clients recognize a share line in chat.</summary>
+        public const string ShareMarker = "[Pin Matrix]";
+
+        /// <summary>
+        /// Title safe to travel through chat and to sit inside a VTML href attribute on the
+        /// receiving side: the server escapes angle brackets in player chat (which would corrupt
+        /// the embedded command), and quotes would terminate the href attribute.
+        /// </summary>
+        public static string ShareSafeTitle(string title)
+        {
+            var sb = new StringBuilder();
+            foreach (char ch in SafeTitle(title))
+            {
+                if (ch != '<' && ch != '>' && ch != '"' && ch != '&' && ch != '|') sb.Append(ch);
+            }
+            string t = sb.ToString().Trim();
+            return t.Length == 0 ? "Waypoint" : t;
+        }
+
+        /// <summary>
+        /// The add command another player runs to get a copy of this waypoint. Uses plain
+        /// (unprefixed) coordinates — X/Z spawn-relative, Y absolute — the same convention as the
+        /// coordinate HUD and the share line's readable part. Safe because the command parser
+        /// resolves plain numbers against (spawnX, 0, spawnZ), which is identical for every
+        /// player on the server (PopFlexiblePos, verified against 1.22.6 vsapi).
+        /// </summary>
+        public static string ShareCommand(Waypoint wp, double relX, double relZ)
+            => $"/waypoint addati {SafeIcon(wp.Icon)} {F(relX)} {F(wp.Position.Y)} {F(relZ)} {(wp.Pinned ? "true" : "false")} {ColorHex(wp.Color)} {ShareSafeTitle(wp.Title)}";
+
+        /// <summary>
+        /// One chat line: human-readable part first, then the command so anyone can copy it.
+        /// Format is load-bearing — ChatShareLinks parses it on receiving clients.
+        /// </summary>
+        public static string ShareLine(Waypoint wp, string relCoords, string command)
+            => $"{ShareMarker} {ShareSafeTitle(wp.Title)} ({relCoords}) | add: {command}";
     }
 
     /// <summary>Read access to the client's waypoint layer plus spawn-relative coordinate conversion.</summary>

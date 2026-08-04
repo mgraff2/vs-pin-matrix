@@ -2,6 +2,14 @@
 
 All notable changes to Pin Matrix are documented here.
 
+## [1.1.0] — 2026-08-04
+
+### Added
+- **Share** row action: a fourth mini-button in the Actions column opens a Share screen with two options.
+  - **Send to chat**: posts one line with the pin's name, spawn-relative coordinates, and the `/waypoint addati` command so anyone can copy it. The command uses plain coordinates (X/Z spawn-relative, Y absolute — same as the coordinate HUD), matching how players share waypoints by hand.
+  - **Copy command**: puts the `/waypoint addati` command on the clipboard for pasting into Discord etc.; recipients paste it into their chat box to add the pin.
+- Players who also run Pin Matrix additionally get a clickable "[Pin Matrix] Click here to add this waypoint to your map" link when a share line arrives in chat (vanilla confirm prompt before the command runs). Vanilla clients just see the plain text — the server escapes VTML in player chat, so a clickable link cannot be sent directly.
+
 ## [1.0.1] — 2026-08-03
 
 ### Fixed
@@ -22,5 +30,6 @@ Initial release for Vintage Story 1.22.x.
 - Map screen button ("Pin Matrix Editor") and bindable hotkey.
 - Fully client-side — no server-side install required.
 
+[1.1.0]: https://github.com/mgraff2/vs-pin-matrix/releases/tag/v1.1.0
 [1.0.1]: https://github.com/mgraff2/vs-pin-matrix/releases/tag/v1.0.1
 [1.0.0]: https://github.com/mgraff2/vs-pin-matrix/releases/tag/v1.0.0

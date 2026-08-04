@@ -769,6 +769,93 @@ namespace PinMatrix
             });
         }
 
+        // ------------------------------------------------------------------ share screen
+
+        string shareKey;
+
+        void OpenShare(PinRow row)
+        {
+            shareKey = row.Key;
+            screen = PmScreen.Share;
+            Recompose();
+        }
+
+        /// <summary>Re-resolves the shared pin (it may have been edited or deleted since the screen opened).</summary>
+        Waypoint ShareTarget()
+        {
+            int i = svc.ResolveIndex(shareKey);
+            if (i >= 0) return svc.Own[i];
+            notice = "That pin no longer exists.";
+            RefreshData();
+            BackToMatrix();
+            return null;
+        }
+
+        string ShareRelCoords(Waypoint wp)
+            => $"{FmtCoord(svc.RelX(wp.Position.X))}, {FmtCoord(wp.Position.Y)}, {FmtCoord(svc.RelZ(wp.Position.Z))}";
+
+        string ShareCmd(Waypoint wp)
+            => WpCommands.ShareCommand(wp, svc.RelX(wp.Position.X), svc.RelZ(wp.Position.Z));
+
+        string ShareChatLine(Waypoint wp)
+            => WpCommands.ShareLine(wp, ShareRelCoords(wp), ShareCmd(wp));
+
+        void ComposeShare(GuiComposer c)
+        {
+            int i = svc.ResolveIndex(shareKey);
+            if (i < 0)
+            {
+                // Composing mid-recompose: show a stub; the poll tick will bounce back to the matrix.
+                c.AddStaticText("That pin no longer exists.", CairoFont.WhiteSmallText(), EB(4, 42, DW, 25));
+                c.AddSmallButton("Back", () => { BackToMatrix(); return true; }, EB(4, 76, 80, 30));
+                return;
+            }
+            var wp = svc.Own[i];
+            var font = CairoFont.WhiteSmallText();
+            double y = 42;
+
+            c.AddStaticText($"Share '{WpCommands.ShareSafeTitle(wp.Title)}' ({ShareRelCoords(wp)})", CairoFont.WhiteSmallishText(), EB(4, y, DW, 28));
+            y += 36;
+
+            c.AddStaticText("Chat message (players who also run Pin Matrix get a clickable add-link; everyone else sees this text and can copy the command from it):", font, EB(4, y, DW, 44));
+            y += 48;
+            c.AddInset(EB(2, y - 2, DW + 4, 48), 3);
+            c.AddStaticText(ShareChatLine(wp), font, EB(8, y + 2, DW - 12, 44));
+            y += 56;
+
+            c.AddStaticText("Add command (paste in Discord etc. — running it in chat re-creates this exact pin):", font, EB(4, y, DW, 25));
+            y += 28;
+            c.AddInset(EB(2, y - 2, DW + 4, 48), 3);
+            c.AddStaticText(ShareCmd(wp), font, EB(8, y + 2, DW - 12, 44));
+            y += 60;
+
+            c.AddSmallButton("Send to chat", () => { OnShareSend(); return true; }, EB(4, y, 130, 30));
+            c.AddSmallButton("Copy command", () => { OnShareCopy(); return true; }, EB(140, y, 140, 30));
+            c.AddSmallButton("Back", () => { BackToMatrix(); return true; }, EB(286, y, 80, 30));
+            c.AddDynamicText("", font, EB(376, y + 6, DW - 376, 24), "shareresult");
+        }
+
+        void ShareFeedback(string text)
+            => SingleComposer.GetDynamicText("shareresult")?.SetNewText(text, false, true, false);
+
+        void OnShareSend()
+        {
+            var wp = ShareTarget();
+            if (wp == null) return;
+            // Straight to the current chat channel — deliberately not via BatchEngine (its Busy
+            // flag suppresses list polling, and this is not a mutation).
+            capi.SendChatMessage(ShareChatLine(wp));
+            ShareFeedback("Sent to chat.");
+        }
+
+        void OnShareCopy()
+        {
+            var wp = ShareTarget();
+            if (wp == null) return;
+            capi.Input.ClipboardText = ShareCmd(wp);
+            ShareFeedback("Copied — recipients paste it into their chat box.");
+        }
+
         // ------------------------------------------------------------------ export / import screen
 
         string importPath = "";

@@ -14,7 +14,7 @@ namespace PinMatrix
 {
     public enum PmScreen
     {
-        Matrix, Confirm, SetColor, SetIcon, Rename, NewPin, Bin, ImportExport
+        Matrix, Confirm, SetColor, SetIcon, Rename, NewPin, Bin, ImportExport, Share
     }
 
     public class PendingBulk
@@ -30,7 +30,7 @@ namespace PinMatrix
     public partial class GuiDialogPinMatrix : GuiDialog
     {
         // ---- layout constants (unscaled) ----
-        const double DW = 850;          // content width
+        const double DW = 896;          // content width
         const double RowH = 25;
         const double ConfRowH = 22;
 
@@ -44,7 +44,7 @@ namespace PinMatrix
         const double ColZX = 538, ColZW = 60;
         const double ColDistX = 602, ColDistW = 62;
         const double ColPinX = 668, ColPinW = 34;
-        const double ColActX = 706, ColActW = 140;
+        const double ColActX = 706, ColActW = 186;
 
         readonly PinMatrixConfig config;
         readonly WaypointService svc;
@@ -233,6 +233,7 @@ namespace PinMatrix
                 case PmScreen.NewPin: ComposeNewPin(composer); break;
                 case PmScreen.Bin: ComposeBin(composer); break;
                 case PmScreen.ImportExport: ComposeImportExport(composer); break;
+                case PmScreen.Share: ComposeShare(composer); break;
             }
 
             var replaced = SingleComposer;
@@ -260,6 +261,7 @@ namespace PinMatrix
                 case PmScreen.NewPin: return newPinIsMove ? "Pin Matrix — Move pin" : "Pin Matrix — New pin";
                 case PmScreen.Bin: return "Pin Matrix — Recycle bin";
                 case PmScreen.ImportExport: return "Pin Matrix — Export / Import";
+                case PmScreen.Share: return "Pin Matrix — Share pin";
                 default: return "Pin Matrix — Waypoint manager";
             }
         }
@@ -317,7 +319,7 @@ namespace PinMatrix
             c.AddSmallButton("Clear selection", OnClearSelection, EB(158, y, 132, 26));
             c.AddSmallButton("Clear filters", OnClearFilters, EB(296, y, 116, 26));
             c.AddSmallButton("Refresh", OnRefreshClicked, EB(418, y, 88, 26));
-            c.AddDynamicText(StatusText(), font.Clone().WithOrientation(EnumTextOrientation.Right), EB(512, y + 4, 338, 24), "status");
+            c.AddDynamicText(StatusText(), font.Clone().WithOrientation(EnumTextOrientation.Right), EB(512, y + 4, DW - 512, 24), "status");
 
             // header row (sort buttons)
             y += 34;
@@ -364,7 +366,7 @@ namespace PinMatrix
             {
                 c.AddSmallButton("Redraw map", () => { ExecuteMapRedraw(); return true; }, EB(442, y, 120, 28));
             }
-            c.AddSmallButton("Back to map", () => { OnBackToMap(); return true; }, EB(704, y, 142, 28));
+            c.AddSmallButton("Back to map", () => { OnBackToMap(); return true; }, EB(DW - 146, y, 142, 28));
         }
 
         void OnBackToMap()
@@ -625,6 +627,7 @@ namespace PinMatrix
                 DrawMiniButton(ctx, font, "Edit", ColActX, ry, rh);
                 DrawMiniButton(ctx, font, "Map", ColActX + 46, ry, rh);
                 DrawMiniButton(ctx, font, "Move", ColActX + 92, ry, rh);
+                DrawMiniButton(ctx, font, "Share", ColActX + 138, ry, rh);
             }
         }
 
@@ -735,6 +738,7 @@ namespace PinMatrix
                 if (sub < 44) OpenVanillaEdit(row);
                 else if (sub >= 46 && sub < 90) ShowOnMap(row);
                 else if (sub >= 92 && sub < 136) OpenMove(row);
+                else if (sub >= 138 && sub < 182) OpenShare(row);
                 args.Handled = true;
                 return;
             }

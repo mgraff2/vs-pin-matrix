@@ -15,6 +15,7 @@ namespace PinMatrix
         RecycleBin bin;
         GuiDialogPinMatrix dialog;
         HudPinMatrixMapButton mapButton;
+        ChatShareLinks chatShareLinks;
         long mapWatchListenerId;
 
         public override bool ShouldLoad(EnumAppSide forSide) => forSide == EnumAppSide.Client;
@@ -41,6 +42,7 @@ namespace PinMatrix
             capi.Input.SetHotKeyHandler("pinmatrix", OnHotkey);
 
             mapWatchListenerId = capi.Event.RegisterGameTickListener(OnMapWatchTick, 250);
+            chatShareLinks = new ChatShareLinks(capi);
         }
 
         /// <summary>Shows/hides the "Pin Matrix Editor" button in sync with the full world map dialog.</summary>
@@ -173,6 +175,8 @@ namespace PinMatrix
             }
             mapButton?.Dispose();
             mapButton = null;
+            chatShareLinks?.Dispose();
+            chatShareLinks = null;
             dialog?.Dispose();
             dialog = null;
             base.Dispose();
