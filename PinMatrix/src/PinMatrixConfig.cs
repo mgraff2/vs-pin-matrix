@@ -25,6 +25,15 @@ namespace PinMatrix
         /// <summary>Table rows per page (5-18; the table area is sized to fit).</summary>
         public int RowsPerPage { get; set; } = 14;
 
+        /// <summary>
+        /// Fixed placement for the map-screen button, in unscaled pixels from the right/top edge.
+        /// -1 (default) = automatic placement. Set both to pin the button and disable the
+        /// automatic overlap-avoidance entirely — the escape hatch when another mod's map HUD
+        /// occupies the same corner.
+        /// </summary>
+        public int MapButtonRightMargin { get; set; } = -1;
+        public int MapButtonYOffset { get; set; } = -1;
+
         public void Clamp()
         {
             RecycleBinMaxEntries = Math.Max(10, RecycleBinMaxEntries);
@@ -33,6 +42,8 @@ namespace PinMatrix
             PinnedWarnThreshold = Math.Max(1, PinnedWarnThreshold);
             if (RowsPerPage <= 0) RowsPerPage = 18;
             RowsPerPage = Math.Min(18, Math.Max(5, RowsPerPage));
+            if (MapButtonRightMargin >= 0) MapButtonRightMargin = Math.Min(4000, MapButtonRightMargin);
+            if (MapButtonYOffset >= 0) MapButtonYOffset = Math.Min(4000, MapButtonYOffset);
         }
     }
 }

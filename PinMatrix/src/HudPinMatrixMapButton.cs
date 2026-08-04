@@ -1,5 +1,6 @@
 using System;
 using Vintagestory.API.Client;
+using Vintagestory.API.Config;
 using Vintagestory.GameContent;
 
 namespace PinMatrix
@@ -34,6 +35,7 @@ namespace PinMatrix
         public void SetOffset(int fromRight, int fromTop)
         {
             if (fromRight == rightMargin && fromTop == yOffset) return;
+            capi.Logger.Debug("[pinmatrix] mapbtn move: right={0} y={1} -> right={2} y={3}", rightMargin, yOffset, fromRight, fromTop);
             rightMargin = fromRight;
             yOffset = fromTop;
             var old = SingleComposer;
@@ -66,11 +68,38 @@ namespace PinMatrix
             onClick?.Invoke();
         }
 
+        // Approximate outer width of the composed dialog (button 170 + bg padding 2*4),
+        // used to convert the right-edge margin into an absolute left position.
+        const double OuterWidthUnscaled = 178;
+
+        double composedForFrameW;
+        double composedForScale;
+
+        /// <summary>Re-anchors to the right edge after a window resize or GUI-scale change (absolute positioning doesn't track it automatically).</summary>
+        public void RecomposeIfScreenChanged()
+        {
+            if (capi.Render.FrameWidth == composedForFrameW && RuntimeEnv.GUIScale == composedForScale) return;
+            var old = SingleComposer;
+            Compose();
+            if (old != null) capi.World.RegisterCallback(_ => old.Dispose(), 250);
+        }
+
         void Compose()
         {
+            composedForFrameW = capi.Render.FrameWidth;
+            composedForScale = RuntimeEnv.GUIScale;
+
+            // CRITICAL compat: the alignment must NOT be RightTop. Vanilla's coordinate overlay
+            // re-stacks itself below the first other RightTop-aligned composer every 250ms
+            // (HudElementCoordinates.Every250ms -> GetDialogBoundsInArea(RightTop), which matches
+            // purely on Bounds.Alignment) — a RightTop button and the overlay end up chasing each
+            // other around the corner forever, at any GUI scale. Absolute positioning keeps this
+            // dialog invisible to that stacking system; the trade-off is re-anchoring manually on
+            // resize/scale changes (RecomposeIfScreenChanged).
+            double screenWUnscaled = capi.Render.FrameWidth / RuntimeEnv.GUIScale;
             var dialogBounds = ElementStdBounds.AutosizedMainDialog
-                .WithAlignment(EnumDialogArea.RightTop)
-                .WithFixedAlignmentOffset(-rightMargin, yOffset);
+                .WithAlignment(EnumDialogArea.None)
+                .WithFixedPosition(screenWUnscaled - rightMargin - OuterWidthUnscaled, yOffset);
 
             var bgBounds = ElementBounds.Fill.WithFixedPadding(4);
             bgBounds.BothSizing = ElementSizing.FitToChildren;

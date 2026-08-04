@@ -4,7 +4,7 @@ Client-side bulk waypoint manager for Vintage Story 1.22.x. Spec: [pin-matrix-mo
 
 ## Installed & ready
 
-`dist/pinmatrix_1.1.1.zip` is already copied to `%APPDATA%\VintagestoryData\Mods\`. Launch the game, load a world, open the map (**M**) and click the **Pin Matrix Editor** button (top right). Optionally bind a hotkey to "Pin Matrix (waypoint manager)" in Settings → Controls — it ships unbound.
+`dist/pinmatrix_1.1.3.zip` is already copied to `%APPDATA%\VintagestoryData\Mods\`. Launch the game, load a world, open the map (**M**) and click the **Pin Matrix Editor** button (top right). Optionally bind a hotkey to "Pin Matrix (waypoint manager)" in Settings → Controls — it ships unbound.
 
 ## Building
 
@@ -46,6 +46,8 @@ Package = zip of `modinfo.json` + `bin/Release/PinMatrix.dll`.
 
 Created on first run: `RecycleBinMaxEntries` (500), `AutoBackupBeforeBulkOps` (false), `BackupRetentionCount` (20),
 `BulkOpDelayMs` (30 — per-command throttle for bulk ops), `PinnedWarnThreshold` (20), `EnableMapRefresh` (false),
-`RowsPerPage` (14, clamped 5–18).
+`RowsPerPage` (14, clamped 5–18), `MapButtonRightMargin` / `MapButtonYOffset` (-1 = automatic placement; set both
+to unscaled px from the right/top edges to pin the map-screen button and disable overlap avoidance — use this if
+another map-HUD mod shares the corner and the automatic placement picks a spot you dislike).
 
 Recycle bin + exports live in `VintagestoryData/ModData/pinmatrix/`.

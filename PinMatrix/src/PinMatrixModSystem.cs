@@ -17,6 +17,7 @@ namespace PinMatrix
         HudPinMatrixMapButton mapButton;
         ChatShareLinks chatShareLinks;
         long mapWatchListenerId;
+        int settleTicksLeft;
 
         public override bool ShouldLoad(EnumAppSide forSide) => forSide == EnumAppSide.Client;
 
@@ -62,10 +63,22 @@ namespace PinMatrix
                     mapButton.ResetOffset();    // each map-open starts from the preferred slot
                     PositionMapButton();
                     mapButton.TryOpen();
+                    settleTicksLeft = 4;        // ~1s at the 250ms watcher cadence
+                }
+                else if (settleTicksLeft > 0)
+                {
+                    // Settle window: dodge panels that appear right after the map opens (layer
+                    // filters, other mods' map tabs). After it, the button is FROZEN for this
+                    // map session — obstacle avoidance against HUDs that move or pulse (mouse-
+                    // following hover boxes, live readouts like Boat Autopilot's) degenerates
+                    // into a visible dance, and a frozen button can't be dragged into one.
+                    // Worst case after freezing is a static overlap, which is only cosmetic.
+                    settleTicksLeft--;
+                    PositionMapButton();
                 }
                 else
                 {
-                    PositionMapButton();
+                    mapButton.RecomposeIfScreenChanged();   // absolute anchoring: track resizes/scale changes
                 }
             }
             else if (mapButton != null && mapButton.IsOpened())
@@ -81,6 +94,15 @@ namespace PinMatrix
         /// </summary>
         void PositionMapButton()
         {
+            // Pinned via config: no scanning, no avoidance — the user owns the placement.
+            if (config.MapButtonRightMargin >= 0 || config.MapButtonYOffset >= 0)
+            {
+                mapButton.SetOffset(
+                    config.MapButtonRightMargin >= 0 ? config.MapButtonRightMargin : HudPinMatrixMapButton.DefaultRightMargin,
+                    config.MapButtonYOffset >= 0 ? config.MapButtonYOffset : HudPinMatrixMapButton.DefaultYOffset);
+                return;
+            }
+
             double screenW = capi.Render.FrameWidth;
             double screenH = capi.Render.FrameHeight;
 

@@ -2,6 +2,15 @@
 
 All notable changes to Pin Matrix are documented here.
 
+## [1.1.3] — 2026-08-04
+
+(1.1.2 was never released; interim test builds are folded into this entry.)
+
+### Fixed
+- Root cause of the bouncing map-screen button found (thanks to careful bisection by a tester: vanilla only, coordinate overlay on/off): **vanilla's coordinate overlay (Ctrl+V) re-stacks itself below the first other RightTop-aligned dialog every 250ms** (`HudElementCoordinates.Every250ms` → `GetDialogBoundsInArea(RightTop)`, which matches purely on bounds alignment — GUI scale is irrelevant). The Pin Matrix button was a RightTop-aligned dialog, so the overlay parked itself under the button, the button's own overlap-avoidance reacted, and the two dialogs chased each other forever — 1.1.1's one-sided hysteresis couldn't stop vanilla's side of the dance. The button is now positioned with absolute coordinates (alignment `None`), making it invisible to vanilla's stacking system; it re-anchors itself on window resize / GUI-scale changes.
+- Defense in depth kept from the investigation: the button auto-places only during a ~1 second settle window after the map opens and is then frozen for that map session, so no other periodically-moving HUD (e.g. mod panels like Boat Autopilot's) can drag it into a dance either. Worst case is a static overlap, which is cosmetic.
+- New config escape hatch: set `MapButtonRightMargin` / `MapButtonYOffset` (unscaled px from the right/top edges) in `ModConfig/pinmatrix.json` to pin the button to a fixed spot and disable automatic placement entirely.
+
 ## [1.1.1] — 2026-08-04
 
 ### Changed
@@ -46,6 +55,7 @@ Initial release for Vintage Story 1.22.x.
 - Map screen button ("Pin Matrix Editor") and bindable hotkey.
 - Fully client-side — no server-side install required.
 
+[1.1.3]: https://github.com/mgraff2/vs-pin-matrix/releases/tag/v1.1.3
 [1.1.1]: https://github.com/mgraff2/vs-pin-matrix/releases/tag/v1.1.1
 [1.1.0]: https://github.com/mgraff2/vs-pin-matrix/releases/tag/v1.1.0
 [1.0.1]: https://github.com/mgraff2/vs-pin-matrix/releases/tag/v1.0.1
