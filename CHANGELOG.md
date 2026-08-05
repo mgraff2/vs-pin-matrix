@@ -2,6 +2,17 @@
 
 All notable changes to Pin Matrix are documented here.
 
+## [1.1.4] — 2026-08-05
+
+### Changed
+- `modinfo.json` now declares a real minimum game version — `"dependencies": { "game": "1.22.0" }` — instead of the empty string that had shipped since 1.0.0. Matches the Herty Cups convention. Consequence: the loader (SemVer `installed >= floor`) hard-disables the mod on 1.21.x and older clients; all 1.22.x clients load it fine.
+
+### Design notes — what the dependency version actually does (decompiled 1.22.0 and 1.22.6, VintagestoryLib/VintagestoryAPI, Aug 2026)
+- **The empty string was never the source of any in-game warning.** Both the loader (`SatisfiesVersion`: empty → always satisfied) and the mod-manager warning badge (`GuiElementModCell`: skips `""` and `"*"` outright) ignore it, identically in 1.22.0 and 1.22.6. The "requires ⟨version⟩" screen that prompted this change was traced in the client log to a different mod entirely: Clothing Rarity 1.1.2 declares `"game": "1.22.2"`, which on a 1.22.0 install fails the loader's SemVer check and aborts world join with the *nameless* message "A mod requires v1.22.2 of the game" (`disconnect-modrequiresnewerclient`) — the game never says which mod, inviting misattribution. Pin Matrix was innocent; the fix for that screen is updating the game (or disabling Clothing Rarity).
+- **The mod-manager badge is not a SemVer floor check.** `GameVersion.IsCompatibleApiVersion` requires the declared floor's major.minor to equal the client's `APIVersion` constant — and 1.22.0, 1.22.1, and the first 1.22.2 build shipped with `APIVersion` stuck at `"1.21.0"` (fixed 2026-05-30, `anegostudios/vsapi` commit `caebe5cd`, by deriving it from `OverallMajorMinor`). On those clients ANY mod declaring a 1.22 floor — including this one from 1.1.4 on, and Herty Cups — shows the nonsense badge "This mod requests game version 1.22.0, but you are on 1.22.0/1.22.1. It might not load properly." The mod loads and runs fine regardless; the badge is cosmetic and disappears on late-1.22.2 through 1.22.6 clients.
+- **No non-empty floor is badge-free on all six 1.22.x releases** (stale-`APIVersion` clients accept only 1.21 floors; fixed clients accept only 1.22 floors). `"1.22.0"` is chosen because it is honest, matches Herty Cups, and only mis-badges on the April/May-2026-era clients that the auto-updater is steadily draining.
+- Trivia: the 1.22.0 release also shipped `VintagestoryAPI.dll` with a stale 1.21.0 file-version resource (every other binary says 1.22.0) — don't trust `VersionInfo.ProductVersion` on that DLL; the client log's "Game Version:" line is authoritative.
+
 ## [1.1.3] — 2026-08-04
 
 (1.1.2 was never released; interim test builds are folded into this entry.)
@@ -55,6 +66,7 @@ Initial release for Vintage Story 1.22.x.
 - Map screen button ("Pin Matrix Editor") and bindable hotkey.
 - Fully client-side — no server-side install required.
 
+[1.1.4]: https://github.com/mgraff2/vs-pin-matrix/releases/tag/v1.1.4
 [1.1.3]: https://github.com/mgraff2/vs-pin-matrix/releases/tag/v1.1.3
 [1.1.1]: https://github.com/mgraff2/vs-pin-matrix/releases/tag/v1.1.1
 [1.1.0]: https://github.com/mgraff2/vs-pin-matrix/releases/tag/v1.1.0
