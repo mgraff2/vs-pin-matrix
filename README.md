@@ -4,7 +4,7 @@ Client-side bulk waypoint manager for Vintage Story 1.22.x. Spec: [pin-matrix-mo
 
 ## Installed & ready
 
-`dist/pinmatrix_1.2.0.zip` is already copied to `%APPDATA%\VintagestoryData\Mods\`. Launch the game, load a world, open the map (**M**) and click the **Pin Matrix Editor** button (top right). Optionally bind a hotkey to "Pin Matrix (waypoint manager)" in Settings → Controls — it ships unbound.
+`dist/pinmatrix_1.2.1.zip` is already copied to `%APPDATA%\VintagestoryData\Mods\`. Launch the game, load a world, open the map (**M**) and click the **Pin Matrix Editor** button (top right). Optionally bind a hotkey to "Pin Matrix (waypoint manager)" in Settings → Controls — it ships unbound.
 
 ## Building
 
@@ -25,7 +25,7 @@ Package = zip of `modinfo.json` + `bin/Release/PinMatrix.dll`.
 2. **Selection:** click rows (toggles), shift-click (range), "Select all filtered".
 3. **The §4 index-shift test:** create 5 pins (`New pin...`), select #1/#3/#5, Delete → confirm — #2/#4 must survive. Restore from bin afterwards.
 4. **Bulk edit:** filter to an icon, select all filtered, Set color → preview shows before→after → confirm. Then "Undo last bulk".
-5. **Row actions:** Edit (opens the vanilla waypoint dialog), Map (centers the world map), Move (re-creates at new coords), Share (chat/clipboard sharing), double-click row = show on map.
+5. **Row actions:** Edit (opens the vanilla waypoint dialog — it must appear *in front of* the Pin Matrix window, with typing landing in its title box immediately), Map (centers the world map), Move (re-creates at new coords), Share (chat/clipboard sharing), double-click row = show on map.
 6. **Export/Import:** export all, then re-import the same file — everything should be skipped as duplicates.
 7. **Share:** row Share button → "Send to chat" posts the share line and (because your own client also runs Pin Matrix) a clickable "[Pin Matrix] Click here to add..." line should follow it — clicking shows the vanilla confirm prompt and re-creates the pin (a duplicate, since you already own it — delete it after). "Copy command" → paste into Notepad/Discord, then paste into the chat box and send — same pin appears.
 

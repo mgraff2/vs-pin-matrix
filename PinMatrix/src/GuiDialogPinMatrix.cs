@@ -855,7 +855,12 @@ namespace PinMatrix
             }
             var layer = svc.Layer;
             if (layer == null) return;
-            new GuiDialogEditWayPoint(capi, layer, svc.Own[index], index).TryOpen();
+            var dlg = new GuiDialogEditWayPointOnTop(capi, layer, svc.Own[index], index);
+            dlg.TryOpen();
+            // This click is a mouse-down in our table; once it finishes, the GuiManager hands
+            // focus back to the matrix (the handling dialog). Re-focus the editor next tick so
+            // typing lands in its title box right away.
+            capi.Event.RegisterCallback(_ => { if (dlg.IsOpened()) capi.Gui.RequestFocus(dlg); }, 0);
         }
 
         void ShowOnMap(PinRow row)

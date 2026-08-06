@@ -2,6 +2,11 @@
 
 All notable changes to Pin Matrix are documented here.
 
+## [1.2.1] — 2026-08-06
+
+### Fixed
+- The vanilla waypoint editor (row **Edit** button) opened *behind* the Pin Matrix window, where it was invisible and unreachable. Root cause (decompiled 1.22.6 VintagestoryLib): both dialogs draw at order 0.2, and the matrix table handles its row buttons on mouse-down — so after the click that spawns the editor, the game's GuiManager re-focuses the click-handling dialog, and `RequestFocus` re-raises it to the front of its draw-order group, burying the freshly opened editor. A same-order editor can never win that race. The editor Pin Matrix opens is now a trivial subclass drawing at 0.25: its own group, always above the matrix, immune to the re-raise, and it also receives mouse clicks first where the windows overlap (`RegisterDialog` orders same-input-order dialogs by descending draw order). The matrix also steals dialog *focus* at the end of the spawning click, so Pin Matrix re-focuses the editor one tick later — typing lands in the editor immediately.
+
 ## [1.2.0] — 2026-08-06
 
 ### Added
@@ -72,6 +77,7 @@ Initial release for Vintage Story 1.22.x.
 - Map screen button ("Pin Matrix Editor") and bindable hotkey.
 - Fully client-side — no server-side install required.
 
+[1.2.1]: https://github.com/mgraff2/vs-pin-matrix/releases/tag/v1.2.1
 [1.2.0]: https://github.com/mgraff2/vs-pin-matrix/releases/tag/v1.2.0
 [1.1.4]: https://github.com/mgraff2/vs-pin-matrix/releases/tag/v1.1.4
 [1.1.3]: https://github.com/mgraff2/vs-pin-matrix/releases/tag/v1.1.3
