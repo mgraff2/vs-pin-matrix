@@ -156,14 +156,20 @@ namespace PinMatrix
             ApplyView();
         }
 
-        void ApplyView()
+        /// <summary>All filters except the radius — also the candidate set for "Next pin".</summary>
+        IEnumerable<PinRow> FilteredExceptRadius()
         {
             IEnumerable<PinRow> q = allRows;
-
             if (searchText.Length > 0) q = q.Where(r => (r.Wp.Title ?? "").IndexOf(searchText, StringComparison.OrdinalIgnoreCase) >= 0);
             if (iconFilter.Count > 0) q = q.Where(r => iconFilter.Contains(WpCommands.SafeIcon(r.Wp.Icon)));
             if (colorFilter.Count > 0) q = q.Where(r => colorFilter.Contains(WpCommands.ColorHex(r.Wp.Color)));
             if (pinnedOnly) q = q.Where(r => r.Wp.Pinned);
+            return q;
+        }
+
+        void ApplyView()
+        {
+            IEnumerable<PinRow> q = FilteredExceptRadius();
             if (radius > 0) q = q.Where(r => r.Dist <= radius);
 
             switch (sortCol)
@@ -300,8 +306,9 @@ namespace PinMatrix
             c.AddSwitch(OnPinnedOnlyToggled, EB(390, y, 28, 28), "pinnedonly", 25, 3);
             c.AddStaticText("Pinned only", font, EB(423, y + 4, 110, 25));
             c.AddStaticText("Within", font, EB(541, y + 4, 46, 25));
-            c.AddNumberInput(EB(589, y, 72, 28), OnRadiusChanged, font, "radius");
-            c.AddStaticText("blocks", font, EB(667, y + 4, 60, 25));
+            c.AddNumberInput(EB(589, y, 60, 28), OnRadiusChanged, font, "radius");
+            c.AddSlider(OnRadiusSlider, EB(655, y + 4, 152, 20), "radiusslider");
+            c.AddSmallButton("Next pin", OnRadiusNextPin, EB(813, y, 81, 28), EnumButtonStyle.Small);
 
             // icon filter strip (click icons to toggle; multi-select)
             y += 36;
@@ -391,7 +398,15 @@ namespace PinMatrix
             var c = SingleComposer;
             c.GetTextInput("search").SetValue(searchText);
             c.GetSwitch("pinnedonly").SetValue(pinnedOnly);
-            if (radius > 0) c.GetNumberInput("radius").SetValue(radius.ToString("0.#", CultureInfo.InvariantCulture));
+            var radiusInput = c.GetNumberInput("radius");
+            radiusInput.Interval = 50f;    // native tiny arrows / mouse wheel step usefully at map scale
+            radiusInput.OnTryTextChangeText = lines => lines.Count == 0 || !lines[0].TrimStart().StartsWith("-");
+            var slider = c.GetSlider("radiusslider");
+            slider.OnSliderTooltip = RungLabel;
+            slider.OnSliderRestingText = RungLabel;
+            slider.ShowTextWhenResting = true;
+            slider.SetValues(RungIndexFor(radius), 0, RadiusRungs.Length - 1, 1);
+            if (radius > 0) radiusInput.SetValue(radius.ToString("0.#", CultureInfo.InvariantCulture));
             if (colorFilter.Count > 0) c.GetDropDown("colorfilter").SetSelectedValue(colorFilter.ToArray());
         }
 
@@ -493,8 +508,64 @@ namespace PinMatrix
         {
             double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out double v);
             radius = v;
+            // keep the slider handle in sync (nearest notch, display only — SetValues never
+            // fires the slider's own event, so this cannot loop)
+            SingleComposer?.GetSlider("radiusslider")?.SetValues(RungIndexFor(radius), 0, RadiusRungs.Length - 1, 1);
             ApplyView();
             UpdateMatrixDynamic();
+        }
+
+        // Slider notches for the radius filter. The slider's integer value is an INDEX into
+        // this ladder; equal-width notches over 1–2.5–5 rungs give the travel a log scale —
+        // fine control close-in, no huge-number tail. Dragging from the left reveals the
+        // nearest pins in growing rings (the filter re-applies live). Index 0 = filter off.
+        // The number box remains for exact or larger-than-10000 values.
+        static readonly int[] RadiusRungs = { 0, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000 };
+
+        static string RungLabel(int idx) => idx <= 0 ? "off" : RadiusRungs[idx] + " blocks";
+
+        static int RungIndexFor(double v)
+        {
+            if (v <= 0) return 0;
+            int best = 1;
+            for (int i = 1; i < RadiusRungs.Length; i++)
+            {
+                if (Math.Abs(RadiusRungs[i] - v) < Math.Abs(RadiusRungs[best] - v)) best = i;
+            }
+            return best;
+        }
+
+        bool OnRadiusSlider(int idx)
+        {
+            int v = RadiusRungs[GameMath.Clamp(idx, 0, RadiusRungs.Length - 1)];
+            // drive the number box; its changed-handler re-filters and redraws the table
+            SingleComposer?.GetNumberInput("radius")?.SetValue(v == 0 ? "" : v.ToString(CultureInfo.InvariantCulture));
+            return true;
+        }
+
+        /// <summary>
+        /// Widens the radius just enough to take in the next-nearest pin beyond it (among pins
+        /// passing the other filters). From "off" the first click shows only the nearest pin —
+        /// each further click admits the next distance shell.
+        /// </summary>
+        bool OnRadiusNextPin()
+        {
+            double cur = Math.Max(0, radius);
+            double next = double.MaxValue;
+            foreach (var r in FilteredExceptRadius())
+            {
+                if (r.Dist > cur && r.Dist < next) next = r.Dist;
+            }
+            if (next == double.MaxValue)
+            {
+                notice = radius > 0 ? "No pins beyond the current radius." : "No pins match the other filters.";
+                UpdateMatrixDynamic();
+                return true;
+            }
+            notice = "";
+            // ceil keeps the box tidy and (Dist <= radius) inclusive of the found pin
+            SingleComposer?.GetNumberInput("radius")?.SetValue(Math.Ceiling(next).ToString("0.#", CultureInfo.InvariantCulture));
+            return true;
         }
 
         void OnSortClicked(int col)

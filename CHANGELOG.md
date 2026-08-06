@@ -2,6 +2,12 @@
 
 All notable changes to Pin Matrix are documented here.
 
+## [1.2.0] — unreleased
+
+### Added
+- **Distance slider** next to the "Within … blocks" radius filter (requested by a tester): drag through notches on a 1–2.5–5 ladder — off, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000 — and since the filter re-applies live on every change, dragging right from "off" reveals your nearest pins in growing rings (sort by Dist for the full effect). Equal-width notches give the slider a log scale: fine control close-in, no runaway huge numbers at the top (an earlier unreleased +/− button design kept climbing past 10k — the slider's ladder is capped instead). Mouse wheel or arrow keys on the slider tick one notch at a time. The number box remains for exact values or radii beyond 10000; typing moves the slider to the nearest notch (display only — the typed value is what filters). The box's native tiny arrows and mouse wheel now step by 50 blocks (previously a useless 1); negative radii can no longer be entered.
+- **"Next pin" button** (requested by the same tester): widens the radius just enough to admit the next-nearest pin that passes the other filters. From "off", the first click shows only your closest pin; every further click reveals the next one out — a one-button "expanding search". When nothing lies beyond the current radius, a notice says so and the radius stays put.
+
 ## [1.1.4] — 2026-08-05
 
 ### Changed
