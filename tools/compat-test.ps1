@@ -178,3 +178,8 @@ if ($failed.Count -gt 0) {
     exit 1
 }
 Write-Host "COMPAT TEST PASSED: all $($results.Count) combos boot clean" -ForegroundColor Green
+# Explicit success exit: only native commands and `exit` set $LASTEXITCODE, so a programmatic
+# caller (like Tallybook's version-sweep.ps1 pattern) would otherwise read a stale code from
+# whatever ran earlier and report a fully passing matrix as FAIL. Found the hard way over in
+# the Tallybook repo.
+exit 0
