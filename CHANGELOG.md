@@ -2,7 +2,7 @@
 
 All notable changes to Pin Matrix are documented here.
 
-## [1.2.0] — unreleased
+## [1.2.0] — 2026-08-06
 
 ### Added
 - **Distance slider** next to the "Within … blocks" radius filter (requested by a tester): drag through notches on a 1–2.5–5 ladder — off, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000 — and since the filter re-applies live on every change, dragging right from "off" reveals your nearest pins in growing rings (sort by Dist for the full effect). Equal-width notches give the slider a log scale: fine control close-in, no runaway huge numbers at the top (an earlier unreleased +/− button design kept climbing past 10k — the slider's ladder is capped instead). Mouse wheel or arrow keys on the slider tick one notch at a time. The number box remains for exact values or radii beyond 10000; typing moves the slider to the nearest notch (display only — the typed value is what filters). The box's native tiny arrows and mouse wheel now step by 50 blocks (previously a useless 1); negative radii can no longer be entered.
@@ -72,6 +72,7 @@ Initial release for Vintage Story 1.22.x.
 - Map screen button ("Pin Matrix Editor") and bindable hotkey.
 - Fully client-side — no server-side install required.
 
+[1.2.0]: https://github.com/mgraff2/vs-pin-matrix/releases/tag/v1.2.0
 [1.1.4]: https://github.com/mgraff2/vs-pin-matrix/releases/tag/v1.1.4
 [1.1.3]: https://github.com/mgraff2/vs-pin-matrix/releases/tag/v1.1.3
 [1.1.1]: https://github.com/mgraff2/vs-pin-matrix/releases/tag/v1.1.1
