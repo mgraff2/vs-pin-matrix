@@ -42,6 +42,34 @@ Package = zip of `modinfo.json` + `bin/Release/PinMatrix.dll`.
 - **Map refresh** button exists behind `EnableMapRefresh` (default off) in `ModConfig/pinmatrix.json`; it invokes vanilla's client-side `.map redraw` command.
 - The hotkey ships **unbound** (assign one under Settings → Controls if wanted); the map-screen button is the primary entry point. No hotkey entry in the mod config (vanilla controls are the single source of truth).
 
+## Compat regression testing
+
+`.\tools\compat-test.ps1` builds the zip and boots a headless dedicated server for every
+mod combination — solo, +Waypointer, +Translocator Paths, +ProspectTogether, +Boat
+Autopilot, +Status HUD Continued, and all together — failing on any `[Error]`/`[Warning]`
+in the server log, a wrong mod count or load order, or a violated marker. Because Pin
+Matrix is client-side only, the pinned markers are: the server must still *load* the
+assembly and instantiate its mod systems (proves the DLL works against the game version),
+and the mod must stay completely silent otherwise — exactly one `pinmatrix` mention in
+`server-main.log` (its load-order entry) in every combo. Companion zips are cached in
+`tools/compat-cache/` (gitignored), pulled from the live Mods folder or the mod DB on
+first use. `-SkipBuild` reuses the packaged zip; to check another game version, pass
+`-ServerExe <dir>\VintagestoryServer.exe` pointing at an extracted per-version dedicated
+server package (`https://cdn.vintagestory.at/gamefiles/stable/vs_server_win-x64_<ver>.zip`).
+Run it after any code change and before every release.
+
+Headless boots validate zip packaging, modinfo/dependency declarations, assembly loading,
+and the client-only gate — **not** client visuals or in-world interaction. Manual
+pre-release checklist for what the server can't see:
+
+1. Open the world map with ProspectTogether and/or Boat Autopilot active — the Pin Matrix
+   Editor button must land clear of their panels/readouts and stay frozen (no dancing).
+2. With Status HUD Continued active, confirm its HUD elements and the map button coexist.
+3. With Waypointer / Translocator Paths active, open the editor and bulk-edit a few pins —
+   the table must track waypoints those mods add, and nothing may corrupt indices (§4 test
+   in "What to test first").
+4. Share round trip: "Send to chat" → clickable add-link appears and works.
+
 ## Config (`VintagestoryData/ModConfig/pinmatrix.json`)
 
 Created on first run: `RecycleBinMaxEntries` (500), `AutoBackupBeforeBulkOps` (false), `BackupRetentionCount` (20),

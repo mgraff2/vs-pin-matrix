@@ -1,5 +1,6 @@
 bin/
 obj/
 dist/
+tools/compat-cache/
 *.user
 .vs/
