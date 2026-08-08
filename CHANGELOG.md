@@ -2,6 +2,11 @@
 
 All notable changes to Pin Matrix are documented here.
 
+## [1.3.1] — 2026-08-08
+
+### Fixed
+- The **Group duplicates** label wrapped to a second line and overran the table header. A `AddStaticText` narrower than its string does not ellipsize — it wraps — and the abbreviated "Group dupes" was still short at typical GUI scales. The label is spelled out in full with a width that fits it, and **Refresh** moved down to the utilities row (next to Recycle bin) to free the space, rather than shaving pixels off neighbours again. Rule of thumb now recorded at the call site: ~9.5 unscaled px per character, plus padding, rounded up.
+
 ## [1.3.0] — 2026-08-08
 
 ### Added

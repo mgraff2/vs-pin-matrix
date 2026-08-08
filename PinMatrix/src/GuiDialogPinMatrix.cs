@@ -529,10 +529,12 @@ namespace PinMatrix
             c.AddSmallButton("Select all filtered", OnSelectAllFiltered, EB(4, y, 148, 26));
             c.AddSmallButton("Clear selection", OnClearSelection, EB(158, y, 132, 26));
             c.AddSmallButton("Clear filters", OnClearFilters, EB(296, y, 116, 26));
-            c.AddSmallButton("Refresh", OnRefreshClicked, EB(418, y, 88, 26));
-            c.AddSwitch(OnGroupDuplicatesToggled, EB(510, y - 1, 26, 26), "groupdupes", 23, 3);
-            c.AddStaticText("Group dupes", font, EB(540, y + 4, 92, 24));
-            c.AddDynamicText(StatusText(), font.Clone().WithOrientation(EnumTextOrientation.Right), EB(636, y + 4, DW - 636, 24), "status");
+            // Rule of thumb for every label on this dialog: a static text needs ~9.5 unscaled px per
+            // character plus padding, and one that comes up short does not ellipsize — it wraps to a
+            // second line and overruns whatever is drawn below it. Round up.
+            c.AddSwitch(OnGroupDuplicatesToggled, EB(420, y - 1, 26, 26), "groupdupes", 23, 3);
+            c.AddStaticText("Group duplicates", font, EB(452, y + 4, 160, 24));
+            c.AddDynamicText(StatusText(), font.Clone().WithOrientation(EnumTextOrientation.Right), EB(616, y + 4, DW - 616, 24), "status");
 
             // header row (sort buttons)
             y += 34;
@@ -578,9 +580,12 @@ namespace PinMatrix
             c.AddSmallButton("New pin...", () => { OpenNewPin(); return true; }, EB(4, y, 100, 28));
             c.AddSmallButton("Export / Import...", () => { screen = PmScreen.ImportExport; Recompose(); return true; }, EB(110, y, 160, 28));
             c.AddSmallButton($"Recycle bin ({bin.Entries.Count})...", () => { OpenBin(); return true; }, EB(276, y, 160, 28));
+            // Refresh lives here with the other utilities: the selection row it used to share needed
+            // the width for the grouping toggle, and this row has room to spare.
+            c.AddSmallButton("Refresh", OnRefreshClicked, EB(442, y, 88, 28));
             if (config.EnableMapRefresh)
             {
-                c.AddSmallButton("Redraw map", () => { ExecuteMapRedraw(); return true; }, EB(442, y, 120, 28));
+                c.AddSmallButton("Redraw map", () => { ExecuteMapRedraw(); return true; }, EB(536, y, 120, 28));
             }
             c.AddSmallButton("Back to map", () => { OnBackToMap(); return true; }, EB(DW - 146, y, 142, 28));
         }

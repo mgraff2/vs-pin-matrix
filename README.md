@@ -4,7 +4,7 @@ Client-side bulk waypoint manager for Vintage Story 1.22.x. Spec: [pin-matrix-mo
 
 ## Installed & ready
 
-`dist/pinmatrix_1.3.0.zip` is already copied to `%APPDATA%\VintagestoryData\Mods\`. Launch the game, load a world, open the map (**M**) and click the **Pin Matrix Editor** button (top right). Optionally bind a hotkey to "Pin Matrix (waypoint manager)" in Settings → Controls — it ships unbound.
+`dist/pinmatrix_1.3.1.zip` is already copied to `%APPDATA%\VintagestoryData\Mods\`. Launch the game, load a world, open the map (**M**) and click the **Pin Matrix Editor** button (top right). Optionally bind a hotkey to "Pin Matrix (waypoint manager)" in Settings → Controls — it ships unbound.
 
 ## Building
 
