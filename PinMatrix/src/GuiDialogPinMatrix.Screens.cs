@@ -90,23 +90,58 @@ namespace PinMatrix
                 Title = $"Delete {rows.Count} pins? They will be moved to the recycle bin.",
                 ConfirmText = $"Delete {rows.Count} pins",
                 Lines = rows.Select(r => Disp(r.Wp) + "  ->  recycle bin").ToArray(),
-                Execute = () =>
-                {
-                    MaybeAutoBackup();
-                    // CRITICAL (spec §4): resolve indices at execution time, delete in strictly descending order
-                    var resolved = new List<(int Index, Waypoint Wp)>();
-                    foreach (var key in keys)
-                    {
-                        int i = svc.ResolveIndex(key);
-                        if (i >= 0) resolved.Add((i, svc.Own[i]));
-                    }
-                    int missing = keys.Count - resolved.Count;
-                    bin.Add(resolved.Select(t => t.Wp), "Bulk delete");
-                    var cmds = resolved.OrderByDescending(t => t.Index).Select(t => WpCommands.Remove(t.Index)).ToList();
-                    undo = null;
-                    RunBatch(cmds, $"Deleted {resolved.Count} pins — they are in the recycle bin."
-                        + (missing > 0 ? $" ({missing} were already gone.)" : ""));
-                }
+                Execute = () => ExecDelete(keys, "Bulk delete", "Deleted"),
+            });
+        }
+
+        /// <summary>
+        /// CRITICAL (spec §4): resolve indices at execution time and delete in strictly descending
+        /// order — every removal shifts the index of everything after it.
+        /// </summary>
+        void ExecDelete(List<string> keys, string binReason, string doneVerb)
+        {
+            MaybeAutoBackup();
+            var resolved = new List<(int Index, Waypoint Wp)>();
+            foreach (var key in keys)
+            {
+                int i = svc.ResolveIndex(key);
+                if (i >= 0) resolved.Add((i, svc.Own[i]));
+            }
+            int missing = keys.Count - resolved.Count;
+            bin.Add(resolved.Select(t => t.Wp), binReason);
+            var cmds = resolved.OrderByDescending(t => t.Index).Select(t => WpCommands.Remove(t.Index)).ToList();
+            undo = null;
+            RunBatch(cmds, $"{doneVerb} {resolved.Count} pins — they are in the recycle bin."
+                + (missing > 0 ? $" ({missing} were already gone.)" : ""));
+        }
+
+        /// <summary>
+        /// Deletes every copy but one from each set of pins identical in all columns. Deliberately
+        /// scans the whole waypoint list rather than the current view — a filter hiding part of a
+        /// duplicate set would otherwise leave copies behind while reporting the job done. The kept
+        /// copy is the earliest one in the layer's own index order, i.e. the original.
+        /// </summary>
+        void BuildFixDuplicates()
+        {
+            if (batch.Busy) { notice = "A bulk operation is still running..."; UpdateMatrixDynamic(); return; }
+
+            var dupSets = GroupByDuplicate(allRows).Where(g => g.Rows.Count > 1).ToList();
+            var doomed = dupSets.SelectMany(g => g.Rows.Skip(1)).ToList();
+            if (doomed.Count == 0)
+            {
+                notice = "No duplicate pins found — every pin differs from the others in at least one column.";
+                UpdateMatrixDynamic();
+                return;
+            }
+
+            var keys = doomed.Select(r => r.Key).ToList();
+            ShowConfirm(new PendingBulk
+            {
+                Title = $"Delete {doomed.Count} duplicate pins across {dupSets.Count} sets, keeping the original of each?",
+                Warning = "Pins are duplicates only when title, icon, color, pinned state and position all match.",
+                ConfirmText = $"Delete {doomed.Count} duplicates",
+                Lines = doomed.Select(r => Disp(r.Wp) + "  ->  recycle bin").ToArray(),
+                Execute = () => ExecDelete(keys, "Duplicate cleanup", "Removed"),
             });
         }
 
@@ -364,7 +399,7 @@ namespace PinMatrix
         void ComposeSetIcon(GuiComposer c)
         {
             var font = CairoFont.WhiteSmallText();
-            var icons = svc.IconCodes();
+            var icons = DrawableIconCodes();
             double y = 42;
             c.AddStaticText($"Pick an icon for the {selectedKeys.Count} selected pins:", font, EB(4, y, DW, 25));
             y += 30;
@@ -372,7 +407,7 @@ namespace PinMatrix
             y += 40 * (int)Math.Ceiling(icons.Length * 31.0 / 750) + 20;
             c.AddSmallButton("Preview changes", () =>
             {
-                var iconsNow = svc.IconCodes();
+                var iconsNow = DrawableIconCodes();
                 if (pickerIconIdx < 0 || pickerIconIdx >= iconsNow.Length)
                 {
                     notice = "Pick an icon first.";
@@ -509,7 +544,7 @@ namespace PinMatrix
         void ComposeNewPin(GuiComposer c)
         {
             var font = CairoFont.WhiteSmallText();
-            var icons = svc.IconCodes();
+            var icons = DrawableIconCodes();
             var colors = svc.PaletteColors();
             double y = 42;
 
@@ -521,7 +556,7 @@ namespace PinMatrix
 
             c.AddStaticText("Icon:", font, EB(4, y + 2, 50, 25));
             y += 26;
-            c.AddIconListPicker(icons, i => { npIcon = svc.IconCodes()[i]; }, EB(4, y, 27, 27), 750, "npicons");
+            c.AddIconListPicker(icons, i => { npIcon = icons[i]; }, EB(4, y, 27, 27), 750, "npicons");
             y += 40 * (int)Math.Ceiling(icons.Length * 31.0 / 750) + 8;
 
             c.AddStaticText("Coords (X/Z relative to world spawn, Y absolute — same as the coordinate HUD):", font, EB(4, y, DW, 25));
@@ -550,7 +585,7 @@ namespace PinMatrix
         void RestoreNewPinState()
         {
             if (npHex.Length > 0) SingleComposer.GetTextInput("nphex").SetValue(npHex);
-            int iconIdx = Array.IndexOf(svc.IconCodes(), npIcon);
+            int iconIdx = Array.IndexOf(DrawableIconCodes(), npIcon);   // same list the picker was built from
             if (iconIdx >= 0) SingleComposer.IconListPickerSetValue("npicons", iconIdx);
         }
 

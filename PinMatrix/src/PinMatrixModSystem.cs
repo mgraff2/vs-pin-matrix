@@ -24,6 +24,7 @@ namespace PinMatrix
         public override void StartClientSide(ICoreClientAPI api)
         {
             capi = api;
+            ColorSwatchComponent.EnsureTagRegistered();
 
             try
             {

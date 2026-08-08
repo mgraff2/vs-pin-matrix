@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Linq;
 using System.Text;
 using Vintagestory.API.Client;
+using Vintagestory.API.Config;
 using Vintagestory.API.MathTools;
 using Vintagestory.GameContent;
 
@@ -140,6 +141,40 @@ namespace PinMatrix
                 if (layer?.ownWaypoints == null) return new List<Waypoint>();
                 string uid = capi.World.Player?.PlayerUID;
                 return layer.ownWaypoints.Where(wp => wp.OwningPlayerUid == uid).ToList();
+            }
+        }
+
+        /// <summary>How many waypoints the client has been sent at all, owned by anyone (see <see cref="Own"/>).</summary>
+        public int SyncedCount => Layer?.ownWaypoints?.Count ?? 0;
+
+        /// <summary>
+        /// Asks the server to re-send this player's waypoints.
+        ///
+        /// The client is only ever sent waypoints in reply to a map view-change packet
+        /// (`WorldMapManager.OnViewChangedServer` → `WaypointMapLayer.ResendWaypoints`), which
+        /// vanilla sends only from the world map dialog. So a session that never opened the map —
+        /// entirely possible once the hotkey is bound — has an empty `ownWaypoints` and the matrix
+        /// would show "no waypoints" while the map layer itself has never been told otherwise.
+        /// This sends the same packet vanilla does; the view rectangle is ignored by the waypoint
+        /// layer, so it is kept to the player's own chunk to stay cheap for other map layers.
+        /// </summary>
+        public void RequestResync()
+        {
+            try
+            {
+                var channel = capi.Network.GetChannel("worldmap");
+                if (channel == null) return;
+
+                var pos = capi.World.Player?.Entity?.Pos;
+                if (pos == null) return;
+
+                int cx = (int)(pos.X / GlobalConstants.ChunkSize);
+                int cz = (int)(pos.Z / GlobalConstants.ChunkSize);
+                channel.SendPacket(new OnViewChangedPacket { X1 = cx, Z1 = cz, X2 = cx, Z2 = cz });
+            }
+            catch (Exception e)
+            {
+                capi.Logger.Warning("[pinmatrix] Could not request a waypoint resync: {0}", e.Message);
             }
         }
 

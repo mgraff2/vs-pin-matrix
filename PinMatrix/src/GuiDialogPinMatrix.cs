@@ -27,6 +27,24 @@ namespace PinMatrix
         public PmScreen ReturnScreen = PmScreen.Matrix;
     }
 
+    /// <summary>A set of pins identical in every displayed column — i.e. duplicates of each other.</summary>
+    public class DupGroup
+    {
+        public string Sig;
+        public readonly List<PinRow> Rows = new List<PinRow>();
+    }
+
+    /// <summary>
+    /// One drawn line of the table: either a duplicate-group header (<see cref="Group"/> set) or a
+    /// single pin. Paging, hit-testing and drawing all run over these, so a collapsed group costs
+    /// exactly one line however many copies it holds.
+    /// </summary>
+    public struct GridLine
+    {
+        public DupGroup Group;
+        public PinRow Row;
+    }
+
     public partial class GuiDialogPinMatrix : GuiDialog
     {
         // ---- layout constants (unscaled) ----
@@ -59,7 +77,13 @@ namespace PinMatrix
         // data
         List<PinRow> allRows = new List<PinRow>();
         List<PinRow> viewRows = new List<PinRow>();
+        List<GridLine> gridLines = new List<GridLine>();
         Vec3d playerPos = new Vec3d();
+
+        // duplicate grouping
+        bool groupDuplicates;
+        readonly HashSet<string> expandedGroups = new HashSet<string>();
+        int shownDuplicates;    // extra copies inside the current view, i.e. what grouping folds away
 
         // filters
         string searchText = "";
@@ -94,9 +118,16 @@ namespace PinMatrix
         static readonly double[] IconDim = { 1, 1, 1, 0.45 };
         string[] stripIcons = new string[0];
         ElementBounds iconStripBounds;
+        readonly HashSet<string> probedIcons = new HashSet<string>();
+        readonly HashSet<string> brokenIcons = new HashSet<string>();
+        bool iconAssetsLoaded;
+
+        // colour filter dropdown — values are the colours actually in use, labels carry live counts
+        string[] filterColorHexes = { "#ffffff" };
+        bool colorLabelsStale;
 
         int PageSize => config.RowsPerPage;
-        int MaxPage => Math.Max(0, (viewRows.Count - 1) / PageSize);
+        int MaxPage => Math.Max(0, (gridLines.Count - 1) / PageSize);
 
         public GuiDialogPinMatrix(ICoreClientAPI capi, PinMatrixConfig config, WaypointService svc, BatchEngine batch, RecycleBin bin)
             : base(capi)
@@ -122,7 +153,16 @@ namespace PinMatrix
             notice = "";
             screen = PmScreen.Matrix;
             pending = null;
+
+            ColorSwatchComponent.EnsureTagRegistered();   // the tag table is wiped on leaving a world
+            EnsureIconAssetsLoaded();
+            // re-decide per open: the assets an earlier open found missing may have loaded since
+            probedIcons.Clear();
+            brokenIcons.Clear();
+
             RefreshData();
+            // Nothing synced: ask for it and let the poll tick pick the reply up a moment later
+            if (allRows.Count == 0) svc.RequestResync();
             Recompose();
         }
 
@@ -153,24 +193,108 @@ namespace PinMatrix
 
             selectedKeys.IntersectWith(allRows.Select(r => r.Key));
             anchorRow = -1;
+            RebuildColorFilterValues();
             ApplyView();
         }
 
-        /// <summary>All filters except the radius — also the candidate set for "Next pin".</summary>
-        IEnumerable<PinRow> FilteredExceptRadius()
+        // ------------------------------------------------------------------ colour filter dropdown
+
+        /// <summary>
+        /// The dropdown lists only colours some waypoint actually uses — the full vanilla palette
+        /// plus every custom colour is an unreadable wall of hex. Recomputed whenever the waypoint
+        /// list changes, dropping any filtered colour that no longer exists.
+        /// </summary>
+        void RebuildColorFilterValues()
+        {
+            var hexes = allRows
+                .Select(r => WpCommands.ColorHex(r.Wp.Color))
+                .Distinct()
+                .OrderBy(HueKey)
+                .ThenBy(h => h, StringComparer.Ordinal)
+                .ToArray();
+
+            // A list menu with no entries composes a zero-sized surface, so keep one placeholder
+            filterColorHexes = hexes.Length > 0 ? hexes : new[] { "#ffffff" };
+            colorFilter.IntersectWith(filterColorHexes);
+        }
+
+        /// <summary>
+        /// Sort key that walks the colour wheel, greys first — lexicographic hex order scatters
+        /// near-identical colours all over the list, which is exactly what makes it hard to scan.
+        /// </summary>
+        static double HueKey(string hex)
+        {
+            if (!int.TryParse(hex.TrimStart('#'), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out int v)) return -2;
+            double r = ((v >> 16) & 0xFF) / 255.0, g = ((v >> 8) & 0xFF) / 255.0, b = (v & 0xFF) / 255.0;
+            double max = Math.Max(r, Math.Max(g, b)), min = Math.Min(r, Math.Min(g, b));
+            double chroma = max - min;
+            if (chroma < 0.02) return -1 + max;                 // greys, dark to light, ahead of every hue
+            if (max == r) return ((g - b) / chroma + 6) % 6;    // 0..6 round the wheel
+            if (max == g) return (b - r) / chroma + 2;
+            return (r - g) / chroma + 4;
+        }
+
+        /// <summary>
+        /// One dropdown label per colour: a painted swatch, the hex, and how many pins that colour
+        /// would show under the *other* filters.
+        /// </summary>
+        string[] ColorFilterLabels()
+        {
+            var counts = new Dictionary<string, int>();
+            foreach (var r in FilteredExceptColor())
+            {
+                string h = WpCommands.ColorHex(r.Wp.Color);
+                counts.TryGetValue(h, out int n);
+                counts[h] = n + 1;
+            }
+
+            return filterColorHexes
+                .Select(h => $"<{ColorSwatchComponent.TagName} color=\"{h}\"/> {h} ({(counts.TryGetValue(h, out int n) ? n : 0)})")
+                .ToArray();
+        }
+
+        /// <summary>
+        /// Repaints the dropdown labels so the counts track the other filters. Labels are baked
+        /// into a texture at compose time, so they need an explicit rebuild; only the label text
+        /// changes (the value list is fixed to the colours in use), so the selection survives.
+        /// </summary>
+        void RefreshColorFilterLabels()
+        {
+            var dd = SingleComposer?.GetDropDown("colorfilter");
+            if (dd == null) return;
+
+            // Recomposing an expanded menu resets its scroll position out from under the cursor
+            if (dd.listMenu.IsOpened) { colorLabelsStale = true; return; }
+
+            colorLabelsStale = false;
+            dd.SetList(filterColorHexes, ColorFilterLabels());
+            dd.SetSelectedValue(colorFilter.ToArray());   // re-ticks the switches and repaints the collapsed label
+        }
+
+        IEnumerable<PinRow> Filtered(bool useColor, bool useRadius)
         {
             IEnumerable<PinRow> q = allRows;
             if (searchText.Length > 0) q = q.Where(r => (r.Wp.Title ?? "").IndexOf(searchText, StringComparison.OrdinalIgnoreCase) >= 0);
             if (iconFilter.Count > 0) q = q.Where(r => iconFilter.Contains(WpCommands.SafeIcon(r.Wp.Icon)));
-            if (colorFilter.Count > 0) q = q.Where(r => colorFilter.Contains(WpCommands.ColorHex(r.Wp.Color)));
+            if (useColor && colorFilter.Count > 0) q = q.Where(r => colorFilter.Contains(WpCommands.ColorHex(r.Wp.Color)));
             if (pinnedOnly) q = q.Where(r => r.Wp.Pinned);
+            if (useRadius && radius > 0) q = q.Where(r => r.Dist <= radius);
             return q;
         }
 
+        /// <summary>All filters except the radius — also the candidate set for "Next pin".</summary>
+        IEnumerable<PinRow> FilteredExceptRadius() => Filtered(useColor: true, useRadius: false);
+
+        /// <summary>
+        /// All filters except the colour filter — the base set the colour dropdown counts against.
+        /// Excluding the colour filter itself is what makes the counts useful: they answer "how many
+        /// more pins would this colour add", so picking one colour doesn't zero out all the others.
+        /// </summary>
+        IEnumerable<PinRow> FilteredExceptColor() => Filtered(useColor: false, useRadius: true);
+
         void ApplyView()
         {
-            IEnumerable<PinRow> q = FilteredExceptRadius();
-            if (radius > 0) q = q.Where(r => r.Dist <= radius);
+            IEnumerable<PinRow> q = Filtered(useColor: true, useRadius: true);
 
             switch (sortCol)
             {
@@ -185,8 +309,81 @@ namespace PinMatrix
             }
 
             viewRows = q.ToList();
+            BuildGridLines();
             page = Math.Min(page, MaxPage);
         }
+
+        // ------------------------------------------------------------------ duplicate grouping
+
+        /// <summary>
+        /// Identity across every displayed column — title, icon, colour, pinned and position. Two
+        /// pins sharing a signature are indistinguishable in the table, which is exactly what makes
+        /// them duplicates. Distance is excluded because it is derived from the position, and the
+        /// Actions column holds no data.
+        /// </summary>
+        static string DupSignature(Waypoint wp)
+            => string.Join("|",
+                WpCommands.SafeTitle(wp.Title),
+                WpCommands.SafeIcon(wp.Icon),
+                WpCommands.ColorHex(wp.Color),
+                wp.Pinned ? "1" : "0",
+                wp.Position.X.ToString("0.##", CultureInfo.InvariantCulture),
+                wp.Position.Y.ToString("0.##", CultureInfo.InvariantCulture),
+                wp.Position.Z.ToString("0.##", CultureInfo.InvariantCulture));
+
+        /// <summary>Groups <paramref name="rows"/> by duplicate signature, keeping first-seen order.</summary>
+        static List<DupGroup> GroupByDuplicate(IEnumerable<PinRow> rows)
+        {
+            var bySig = new Dictionary<string, DupGroup>();
+            var ordered = new List<DupGroup>();
+            foreach (var r in rows)
+            {
+                string sig = DupSignature(r.Wp);
+                if (!bySig.TryGetValue(sig, out var g))
+                {
+                    bySig[sig] = g = new DupGroup { Sig = sig };
+                    ordered.Add(g);
+                }
+                g.Rows.Add(r);
+            }
+            return ordered;
+        }
+
+        /// <summary>
+        /// Flattens the sorted view into drawable lines. With grouping off that is one line per pin;
+        /// with it on, each duplicate set becomes a single header line (expandable to its copies)
+        /// while unique pins still draw as ordinary rows — otherwise every row would grow a header.
+        /// </summary>
+        void BuildGridLines()
+        {
+            gridLines = new List<GridLine>(viewRows.Count);
+            shownDuplicates = 0;
+
+            if (!groupDuplicates)
+            {
+                foreach (var r in viewRows) gridLines.Add(new GridLine { Row = r });
+                return;
+            }
+
+            foreach (var g in GroupByDuplicate(viewRows))
+            {
+                if (g.Rows.Count == 1)
+                {
+                    gridLines.Add(new GridLine { Row = g.Rows[0] });
+                    continue;
+                }
+
+                shownDuplicates += g.Rows.Count - 1;
+                gridLines.Add(new GridLine { Group = g });
+                if (expandedGroups.Contains(g.Sig))
+                {
+                    foreach (var r in g.Rows) gridLines.Add(new GridLine { Row = r });
+                }
+            }
+        }
+
+        /// <summary>Extra copies across the whole waypoint list — what "Fix duplicates" would remove.</summary>
+        int DuplicateCount() => GroupByDuplicate(allRows).Sum(g => g.Rows.Count - 1);
 
         IEnumerable<PinRow> Sorted<TKey>(IEnumerable<PinRow> q, System.Func<PinRow, TKey> key, IComparer<TKey> cmp)
             => sortAsc ? q.OrderBy(key, cmp) : q.OrderByDescending(key, cmp);
@@ -196,6 +393,9 @@ namespace PinMatrix
         void OnPollTick(float dt)
         {
             if (!IsOpened() || batch.Busy) return;
+
+            // deferred from a filter change made while the dropdown was expanded
+            if (screen == PmScreen.Matrix && colorLabelsStale) RefreshColorFilterLabels();
 
             string sig;
             try { sig = svc.Signature(); }
@@ -294,21 +494,25 @@ namespace PinMatrix
             var font = CairoFont.WhiteSmallText();
             double y = 38;
 
-            // filter bar
+            // Filter bar. The colour dropdown's extra width is taken from the search box and the
+            // radius slider — NOT from the labels: a static text narrower than its string wraps to a
+            // second line and overruns the row below it, so these widths carry real slack on purpose.
             c.AddStaticText("Search", font, EB(4, y + 4, 52, 25));
-            c.AddTextInput(EB(58, y, 165, 28), OnSearchChanged, font, "search");
+            c.AddTextInput(EB(58, y, 124, 28), OnSearchChanged, font, "search");
 
-            var colorHexes = allRows.Select(r => WpCommands.ColorHex(r.Wp.Color)).Distinct().OrderBy(s => s).ToArray();
-            var colorNames = colorHexes.Select(h => h + " (" + allRows.Count(r => WpCommands.ColorHex(r.Wp.Color) == h) + ")").ToArray();
-            if (colorHexes.Length == 0) { colorHexes = new[] { "#ffffff" }; colorNames = new[] { "#ffffff (0)" }; }
-            c.AddMultiSelectDropDown(colorHexes, colorNames, 0, OnColorFilterChanged, EB(233, y, 145, 28), "colorfilter");
+            // Width is load-bearing. GuiElementListMenu sizes the expanded list to the widest entry
+            // but forgets to add the multi-select checkbox column it then shifts every entry by, so
+            // the tail of each label — the count — is clipped unless the element's own width already
+            // covers swatch + hex + count + that offset. -1 preselects nothing: index 0 would tick
+            // the first colour's checkbox without actually filtering on it.
+            c.AddMultiSelectDropDown(filterColorHexes, ColorFilterLabels(), -1, OnColorFilterChanged, EB(190, y, 200, 28), "colorfilter");
 
-            c.AddSwitch(OnPinnedOnlyToggled, EB(390, y, 28, 28), "pinnedonly", 25, 3);
-            c.AddStaticText("Pinned only", font, EB(423, y + 4, 110, 25));
-            c.AddStaticText("Within", font, EB(541, y + 4, 46, 25));
-            c.AddNumberInput(EB(589, y, 60, 28), OnRadiusChanged, font, "radius");
-            c.AddSlider(OnRadiusSlider, EB(655, y + 4, 152, 20), "radiusslider");
-            c.AddSmallButton("Next pin", OnRadiusNextPin, EB(813, y, 81, 28), EnumButtonStyle.Small);
+            c.AddSwitch(OnPinnedOnlyToggled, EB(398, y, 28, 28), "pinnedonly", 25, 3);
+            c.AddStaticText("Pinned only", font, EB(430, y + 4, 110, 25));
+            c.AddStaticText("Within", font, EB(546, y + 4, 46, 25));
+            c.AddNumberInput(EB(594, y, 60, 28), OnRadiusChanged, font, "radius");
+            c.AddSlider(OnRadiusSlider, EB(660, y + 4, 138, 20), "radiusslider");
+            c.AddSmallButton("Next pin", OnRadiusNextPin, EB(804, y, 81, 28), EnumButtonStyle.Small);
 
             // icon filter strip (click icons to toggle; multi-select)
             y += 36;
@@ -326,7 +530,9 @@ namespace PinMatrix
             c.AddSmallButton("Clear selection", OnClearSelection, EB(158, y, 132, 26));
             c.AddSmallButton("Clear filters", OnClearFilters, EB(296, y, 116, 26));
             c.AddSmallButton("Refresh", OnRefreshClicked, EB(418, y, 88, 26));
-            c.AddDynamicText(StatusText(), font.Clone().WithOrientation(EnumTextOrientation.Right), EB(512, y + 4, DW - 512, 24), "status");
+            c.AddSwitch(OnGroupDuplicatesToggled, EB(510, y - 1, 26, 26), "groupdupes", 23, 3);
+            c.AddStaticText("Group dupes", font, EB(540, y + 4, 92, 24));
+            c.AddDynamicText(StatusText(), font.Clone().WithOrientation(EnumTextOrientation.Right), EB(636, y + 4, DW - 636, 24), "status");
 
             // header row (sort buttons)
             y += 34;
@@ -363,6 +569,9 @@ namespace PinMatrix
             c.AddSmallButton("Unpin", () => { BuildPin(false); return true; }, EB(374, y, 72, 28));
             c.AddSmallButton("Rename...", () => { OpenRename(); return true; }, EB(452, y, 100, 28));
             c.AddSmallButton("Undo last bulk", () => { BuildUndo(); return true; }, EB(558, y, 134, 28));
+            int dupes = DuplicateCount();
+            c.AddSmallButton(dupes > 0 ? $"Fix duplicates ({dupes})..." : "Fix duplicates...",
+                () => { BuildFixDuplicates(); return true; }, EB(698, y, 170, 28));
 
             // action row B — non-mutating / other
             y += 34;
@@ -408,8 +617,11 @@ namespace PinMatrix
             slider.SetValues(RungIndexFor(radius), 0, RadiusRungs.Length - 1, 1);
             if (radius > 0) radiusInput.SetValue(radius.ToString("0.#", CultureInfo.InvariantCulture));
             if (colorFilter.Count > 0) c.GetDropDown("colorfilter").SetSelectedValue(colorFilter.ToArray());
+            c.GetSwitch("groupdupes").SetValue(groupDuplicates);
         }
 
+        // The folded-copy count lives in the toggle's notice and the "x N copies" headers rather than
+        // here — the status line has no room for it once the grouping switch takes its left edge.
         string StatusText() => $"{allRows.Count} pins · {viewRows.Count} shown · {selectedKeys.Count} selected";
         string PageText() => $"Page {page + 1}/{MaxPage + 1}";
 
@@ -421,6 +633,7 @@ namespace PinMatrix
             SingleComposer.GetDynamicText("status")?.SetNewText(StatusText(), false, true, false);
             SingleComposer.GetDynamicText("pageinfo")?.SetNewText(PageText(), false, true, false);
             SingleComposer.GetDynamicText("notice")?.SetNewText(notice, false, true, false);
+            RefreshColorFilterLabels();
         }
 
         // ------------------------------------------------------------------ filter/sort/paging handlers
@@ -477,23 +690,117 @@ namespace PinMatrix
         /// <summary>Draws a waypoint icon the same way vanilla's icon picker does; falls back to the code text.</summary>
         void DrawIconGlyph(Context ctx, string code, double xPx, double yPx, double sizePx, double[] rgba)
         {
-            string name = "wp" + code.UcFirst();
-            if (capi.Gui.Icons.CustomIcons.ContainsKey(name))
+            if (IconDrawable(code))
             {
-                capi.Gui.Icons.DrawIcon(ctx, name, xPx, yPx, sizePx, sizePx, rgba);
+                ctx.Save();
+                try
+                {
+                    capi.Gui.Icons.DrawIcon(ctx, "wp" + code.UcFirst(), xPx, yPx, sizePx, sizePx, rgba);
+                    return;
+                }
+                catch (Exception e)
+                {
+                    // an icon that probed fine can still break later if its asset data is released
+                    MarkIconBroken(code, e);
+                }
+                finally { ctx.Restore(); }
             }
-            else
+
+            var font = CairoFont.WhiteSmallText();
+            font.SetupContext(ctx);
+            capi.Gui.Text.DrawTextLine(ctx, font, code.Length > 3 ? code.Substring(0, 3) : code, xPx, yPx, false);
+        }
+
+        /// <summary>
+        /// Loads the worldmap icon SVGs, which is what actually makes them drawable.
+        ///
+        /// <see cref="WaypointMapLayer"/> indexes <c>textures/icons/worldmap/</c> with
+        /// <c>loadAsset: false</c> and registers a custom GUI icon per asset whose renderer draws the
+        /// <c>IAsset</c> *object* — so until something loads that object's data, painting the icon
+        /// throws `ArgumentNullException("svgAsset")`. Vanilla loads them lazily, when the world map
+        /// first builds its waypoint icon textures, so a session that opens Pin Matrix without ever
+        /// opening the map has most of the set still unloaded. <c>GetMany</c> hands back the *cached*
+        /// asset instances and fills them in place, so this populates exactly the objects those
+        /// renderers closed over.
+        /// </summary>
+        void EnsureIconAssetsLoaded()
+        {
+            if (iconAssetsLoaded) return;
+            iconAssetsLoaded = true;
+            try
             {
-                var font = CairoFont.WhiteSmallText();
-                font.SetupContext(ctx);
-                capi.Gui.Text.DrawTextLine(ctx, font, code.Length > 3 ? code.Substring(0, 3) : code, xPx, yPx, false);
+                capi.Assets.GetMany("textures/icons/worldmap/", null, true);
+            }
+            catch (Exception e)
+            {
+                capi.Logger.Warning("[pinmatrix] Could not preload the waypoint icon assets: {0}", e.Message);
             }
         }
+
+        /// <summary>
+        /// Whether a waypoint icon can actually be painted — established by painting it once onto a
+        /// scratch surface, because asking is not possible and getting it wrong takes down the client.
+        /// This is the backstop for a genuinely unusable SVG once
+        /// <see cref="EnsureIconAssetsLoaded"/> has done what it can; vanilla's own
+        /// <c>AddIconListPicker</c> has the same landmine, hence <see cref="DrawableIconCodes"/>.
+        /// The verdicts are re-established on every dialog open so a transient failure cannot
+        /// blacklist half the icon set for the rest of the session.
+        /// </summary>
+        bool IconDrawable(string code)
+        {
+            string name = "wp" + code.UcFirst();
+            // not cached: the map layer may still be registering icons when the dialog first opens
+            if (!capi.Gui.Icons.CustomIcons.ContainsKey(name)) return false;
+
+            if (brokenIcons.Contains(code)) return false;
+            if (!probedIcons.Add(code)) return true;
+
+            try
+            {
+                using (var surface = new ImageSurface(Format.Argb32, 24, 24))
+                using (var probeCtx = new Context(surface))
+                {
+                    capi.Gui.Icons.DrawIcon(probeCtx, name, 0, 0, 20, 20, IconWhite);
+                }
+                return true;
+            }
+            catch (Exception e)
+            {
+                MarkIconBroken(code, e);
+                return false;
+            }
+        }
+
+        void MarkIconBroken(string code, Exception e)
+        {
+            if (!brokenIcons.Add(code)) return;
+            capi.Logger.Warning("[pinmatrix] Waypoint icon '{0}' cannot be drawn ({1}) — showing its code instead, and hiding it from the icon pickers.", code, e.Message);
+        }
+
+        /// <summary>
+        /// Icon codes safe to hand to vanilla's <c>AddIconListPicker</c>, which paints every entry at
+        /// compose time and cannot survive a broken one. Callers must use this same list to resolve
+        /// the picked index — the filtering shifts indices.
+        /// </summary>
+        string[] DrawableIconCodes() => svc.IconCodes().Where(IconDrawable).ToArray();
 
         void OnColorFilterChanged(string code, bool selected)
         {
             if (selected) colorFilter.Add(code); else colorFilter.Remove(code);
             ApplyView();
+            UpdateMatrixDynamic();
+        }
+
+        void OnGroupDuplicatesToggled(bool on)
+        {
+            groupDuplicates = on;
+            expandedGroups.Clear();   // a fresh grouping starts folded, which is the point of it
+            page = 0;
+            anchorRow = -1;
+            ApplyView();
+            notice = !on ? ""
+                : shownDuplicates > 0 ? $"{shownDuplicates} duplicate copies folded — click a header to unfold it."
+                : "No duplicates among the pins currently shown.";
             UpdateMatrixDynamic();
         }
 
@@ -605,9 +912,25 @@ namespace PinMatrix
 
         bool OnRefreshClicked()
         {
+            svc.RequestResync();
             RefreshData();
             Recompose();
             return true;
+        }
+
+        /// <summary>
+        /// Why the table is empty — the three causes need different actions from the player, and
+        /// "No waypoints yet" was misreporting a sync that simply hadn't happened.
+        /// </summary>
+        string EmptyTableText()
+        {
+            if (allRows.Count > 0) return "No pins match the current filters.";
+            if (svc.Layer == null) return "Waypoint map layer not ready yet.";
+
+            int synced = svc.SyncedCount;
+            if (synced > 0) return $"{synced} waypoints are synced, but none are yours — group-shared pins can't be managed here.";
+
+            return "No waypoints received from the server yet — a resync was requested; 'Refresh' asks again.";
         }
 
         bool OnPrevPage()
@@ -631,26 +954,38 @@ namespace PinMatrix
             double innerW = GuiElement.scaled(DW);
 
             int start = page * PageSize;
-            int count = Math.Min(PageSize, Math.Max(0, viewRows.Count - start));
+            int count = Math.Min(PageSize, Math.Max(0, gridLines.Count - start));
 
             if (count == 0)
             {
                 font.SetupContext(ctx);
-                capi.Gui.Text.DrawTextLine(ctx, font, allRows.Count == 0 ? "No waypoints yet — create one with 'New pin'." : "No pins match the current filters.",
-                    GuiElement.scaled(10), GuiElement.scaled(8), false);
+                capi.Gui.Text.DrawTextLine(ctx, font, EmptyTableText(), GuiElement.scaled(10), GuiElement.scaled(8), false);
                 return;
             }
 
             for (int i = 0; i < count; i++)
             {
-                var row = viewRows[start + i];
+                var line = gridLines[start + i];
+                var group = line.Group;
+                // A group's members are identical in every column, so its header simply draws the
+                // shared row once — the columns still line up, with "x N" where the actions would be.
+                var row = group != null ? group.Rows[0] : line.Row;
                 var wp = row.Wp;
                 double ry = i * rh;
-                bool isSel = selectedKeys.Contains(row.Key);
+                bool isSel = group != null
+                    ? group.Rows.All(r => selectedKeys.Contains(r.Key))
+                    : selectedKeys.Contains(row.Key);
+                bool isMember = group == null && groupDuplicates && expandedGroups.Contains(DupSignature(wp));
 
                 if (isSel)
                 {
                     ctx.SetSourceRGBA(0.45, 0.62, 0.3, 0.32);
+                    ctx.Rectangle(0, ry, innerW, rh);
+                    ctx.Fill();
+                }
+                else if (group != null)
+                {
+                    ctx.SetSourceRGBA(0.85, 0.72, 0.4, 0.16);
                     ctx.Rectangle(0, ry, innerW, rh);
                     ctx.Fill();
                 }
@@ -676,7 +1011,16 @@ namespace PinMatrix
                     ctx.Fill();
                 }
 
-                DrawCell(ctx, font, wp.Title ?? "", ColNameX, ColNameW, ry, rh);
+                // fold arrow on headers; members sit indented under their header
+                double nameIndent = 0;
+                if (group != null)
+                {
+                    DrawFoldArrow(ctx, GuiElement.scaled(ColNameX + 2), ry, rh, expandedGroups.Contains(group.Sig));
+                    nameIndent = 13;
+                }
+                else if (isMember) nameIndent = 13;
+
+                DrawCell(ctx, font, wp.Title ?? "", ColNameX + nameIndent, ColNameW - nameIndent, ry, rh);
                 DrawIconGlyph(ctx, WpCommands.SafeIcon(wp.Icon), GuiElement.scaled(ColIconX + 24), ry + GuiElement.scaled(2.5), GuiElement.scaled(20), IconWhite);
 
                 // color swatch
@@ -695,11 +1039,40 @@ namespace PinMatrix
                 DrawCell(ctx, font, FmtDist(row.Dist), ColDistX, ColDistW, ry, rh);
                 DrawCell(ctx, font, wp.Pinned ? "Y" : "", ColPinX, ColPinW, ry, rh);
 
+                if (group != null)
+                {
+                    // no per-row actions on a header: they would be ambiguous across N identical pins
+                    DrawCell(ctx, font, $"x {group.Rows.Count} copies", ColActX, ColActW, ry, rh);
+                    continue;
+                }
+
                 DrawMiniButton(ctx, font, "Edit", ColActX, ry, rh);
                 DrawMiniButton(ctx, font, "Map", ColActX + 46, ry, rh);
                 DrawMiniButton(ctx, font, "Move", ColActX + 92, ry, rh);
                 DrawMiniButton(ctx, font, "Share", ColActX + 138, ry, rh);
             }
+        }
+
+        void DrawFoldArrow(Context ctx, double x, double ry, double rh, bool expanded)
+        {
+            double s = GuiElement.scaled(4.5);
+            double cy = ry + rh / 2;
+            ctx.NewPath();
+            if (expanded)
+            {
+                ctx.MoveTo(x - s, cy - s * 0.7);
+                ctx.LineTo(x + s, cy - s * 0.7);
+                ctx.LineTo(x, cy + s * 0.8);
+            }
+            else
+            {
+                ctx.MoveTo(x - s * 0.7, cy - s);
+                ctx.LineTo(x + s * 0.8, cy);
+                ctx.LineTo(x - s * 0.7, cy + s);
+            }
+            ctx.ClosePath();
+            ctx.SetSourceRGBA(0.95, 0.88, 0.7, 0.95);
+            ctx.Fill();
         }
 
         void DrawCell(Context ctx, CairoFont font, string text, double colX, double colW, double ry, double rh)
@@ -798,10 +1171,34 @@ namespace PinMatrix
         {
             int rowOnPage = (int)((args.Y - tableBounds.absY) / GuiElement.scaled(RowH));
             int idx = page * PageSize + rowOnPage;
-            if (rowOnPage < 0 || rowOnPage >= PageSize || idx >= viewRows.Count) { args.Handled = true; return; }
+            if (rowOnPage < 0 || rowOnPage >= PageSize || idx >= gridLines.Count) { args.Handled = true; return; }
 
-            var row = viewRows[idx];
             double ux = (args.X - tableBounds.absX) / GuiElement.scaled(1);
+
+            var group = gridLines[idx].Group;
+            if (group != null)
+            {
+                // checkbox column selects the whole set; anywhere else folds it open or shut
+                if (ux < ColNameX)
+                {
+                    bool allSel = group.Rows.All(r => selectedKeys.Contains(r.Key));
+                    foreach (var r in group.Rows)
+                    {
+                        if (allSel) selectedKeys.Remove(r.Key); else selectedKeys.Add(r.Key);
+                    }
+                }
+                else
+                {
+                    if (!expandedGroups.Add(group.Sig)) expandedGroups.Remove(group.Sig);
+                    ApplyView();
+                }
+                anchorRow = -1;
+                UpdateMatrixDynamic();
+                args.Handled = true;
+                return;
+            }
+
+            var row = gridLines[idx].Row;
 
             if (ux >= ColActX)
             {
@@ -827,10 +1224,16 @@ namespace PinMatrix
             }
 
             bool shift = capi.Input.KeyboardKeyStateRaw[(int)GlKeys.LShift] || capi.Input.KeyboardKeyStateRaw[(int)GlKeys.RShift];
-            if (shift && anchorRow >= 0 && anchorRow < viewRows.Count)
+            if (shift && anchorRow >= 0 && anchorRow < gridLines.Count)
             {
                 int a = Math.Min(anchorRow, idx), b = Math.Max(anchorRow, idx);
-                for (int i = a; i <= b; i++) selectedKeys.Add(viewRows[i].Key);
+                for (int i = a; i <= b; i++)
+                {
+                    // a header inside the range takes every copy it stands for with it
+                    var line = gridLines[i];
+                    if (line.Group != null) foreach (var r in line.Group.Rows) selectedKeys.Add(r.Key);
+                    else selectedKeys.Add(line.Row.Key);
+                }
             }
             else
             {

@@ -4,7 +4,7 @@ Client-side bulk waypoint manager for Vintage Story 1.22.x. Spec: [pin-matrix-mo
 
 ## Installed & ready
 
-`dist/pinmatrix_1.2.1.zip` is already copied to `%APPDATA%\VintagestoryData\Mods\`. Launch the game, load a world, open the map (**M**) and click the **Pin Matrix Editor** button (top right). Optionally bind a hotkey to "Pin Matrix (waypoint manager)" in Settings → Controls — it ships unbound.
+`dist/pinmatrix_1.3.0.zip` is already copied to `%APPDATA%\VintagestoryData\Mods\`. Launch the game, load a world, open the map (**M**) and click the **Pin Matrix Editor** button (top right). Optionally bind a hotkey to "Pin Matrix (waypoint manager)" in Settings → Controls — it ships unbound.
 
 ## Building
 
@@ -22,12 +22,14 @@ Package = zip of `modinfo.json` + `bin/Release/PinMatrix.dll`.
 ## What to test first
 
 1. **Read-only pass:** open dialog (P) — table lists your waypoints; sort by clicking headers; search/filters; pagination. Try the radius slider: sort by Dist, then drag the slider next to "Within … blocks" slowly right from "off" — the nearest pins should appear in growing rings (10, 25, 50, … 10000); mouse wheel over the slider ticks one notch. Typing an exact number in the box still works and snaps the slider handle to the nearest notch. **Next pin** starts from "off" showing only your closest pin and reveals one more distance shell per click (respecting the other filters); at the last pin it reports "No pins beyond the current radius."
-2. **Selection:** click rows (toggles), shift-click (range), "Select all filtered".
-3. **The §4 index-shift test:** create 5 pins (`New pin...`), select #1/#3/#5, Delete → confirm — #2/#4 must survive. Restore from bin afterwards.
-4. **Bulk edit:** filter to an icon, select all filtered, Set color → preview shows before→after → confirm. Then "Undo last bulk".
-5. **Row actions:** Edit (opens the vanilla waypoint dialog — it must appear *in front of* the Pin Matrix window, with typing landing in its title box immediately), Map (centers the world map), Move (re-creates at new coords), Share (chat/clipboard sharing), double-click row = show on map.
-6. **Export/Import:** export all, then re-import the same file — everything should be skipped as duplicates.
-7. **Share:** row Share button → "Send to chat" posts the share line and (because your own client also runs Pin Matrix) a clickable "[Pin Matrix] Click here to add..." line should follow it — clicking shows the vanilla confirm prompt and re-creates the pin (a duplicate, since you already own it — delete it after). "Copy command" → paste into Notepad/Discord, then paste into the chat box and send — same pin appears.
+2. **Colour filter:** open the colour dropdown — every entry should be a painted swatch + hex + count, listing only colours your waypoints actually use, sorted round the colour wheel with greys first, and nothing ticked on a fresh open. Type in the search box or click an icon in the strip and reopen the dropdown: the counts must have followed those filters. Ticking a colour must *not* change the other entries' counts.
+3. **Duplicates:** make 3 identical pins (New pin, same name/icon/colour/position), then flip **Group dupes** — they collapse to one row marked `x 3 copies`. Click the header to unfold, click its checkbox to select all three, click the header again to refold. Then **Fix duplicates (N)...** → the preview must list exactly 2 of them (the original is kept) → confirm → restore from the recycle bin afterwards.
+4. **Selection:** click rows (toggles), shift-click (range), "Select all filtered".
+5. **The §4 index-shift test:** create 5 pins (`New pin...`), select #1/#3/#5, Delete → confirm — #2/#4 must survive. Restore from bin afterwards.
+6. **Bulk edit:** filter to an icon, select all filtered, Set color → preview shows before→after → confirm. Then "Undo last bulk".
+7. **Row actions:** Edit (opens the vanilla waypoint dialog — it must appear *in front of* the Pin Matrix window, with typing landing in its title box immediately), Map (centers the world map), Move (re-creates at new coords), Share (chat/clipboard sharing), double-click row = show on map.
+8. **Export/Import:** export all, then re-import the same file — everything should be skipped as duplicates.
+9. **Share:** row Share button → "Send to chat" posts the share line and (because your own client also runs Pin Matrix) a clickable "[Pin Matrix] Click here to add..." line should follow it — clicking shows the vanilla confirm prompt and re-creates the pin (a duplicate, since you already own it — delete it after). "Copy command" → paste into Notepad/Discord, then paste into the chat box and send — same pin appears.
 
 ## Implementation notes / deviations from spec
 
