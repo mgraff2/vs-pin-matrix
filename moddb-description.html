@@ -1,0 +1,73 @@
+<p><strong>A spreadsheet for your waypoints.</strong> Pin Matrix puts every waypoint you own
+into one sortable, filterable table so you can find, tidy, retint, and share them in bulk
+&mdash; instead of clicking pins one at a time on the map.</p>
+
+<p>Fully <strong>client-side</strong>: install it locally and it works on any server, vanilla or modded.
+Nothing to install server-side.</p>
+
+<h2>Getting started</h2>
+
+<p>Open the world map (<strong>M</strong>) and click the <strong>Pin Matrix Editor</strong> button in the
+top-right corner, or just press <strong>P</strong> while the map is open. Prefer your own key? Bind one to
+&quot;Pin Matrix (waypoint manager)&quot; under Settings &rarr; Controls &mdash; it ships unbound.</p>
+
+<p>The <strong>P</strong> shortcut steps aside whenever you are typing: if any text box has focus &mdash;
+chat, a waypoint name, or another mod's panel on the map screen &mdash; the letter goes into the box
+and Pin Matrix stays shut.</p>
+
+<h2>The table</h2>
+
+<ul>
+<li><strong>Sort</strong> by name, icon, colour, X/Y/Z, distance, or pinned state &mdash; click any column header.</li>
+<li><strong>Filter</strong> with text search, an icon strip, a pinned-only toggle, and a colour dropdown
+that shows painted swatches with live counts &mdash; only colours your pins actually use.</li>
+<li><strong>Distance filter</strong> with a slider: drag it out from &quot;off&quot; and your pins appear in growing
+rings around you. The <strong>Next pin</strong> button widens the radius just enough to reveal the
+next-nearest pin &mdash; a one-button expanding search.</li>
+<li>Coordinates display the same way your HUD does (X/Z relative to spawn), so what you see is
+what you'd say in chat.</li>
+</ul>
+
+<h2>Bulk editing</h2>
+
+<ul>
+<li>Select rows by clicking, shift-click for ranges, or grab everything with <strong>Select all filtered</strong>.</li>
+<li>Bulk <strong>delete, set colour, set icon, pin/unpin, and rename</strong> &mdash; every operation shows a
+before/after preview and asks for confirmation first.</li>
+<li><strong>Duplicate cleanup:</strong> a &quot;Group duplicates&quot; switch folds identical pins into single rows
+marked <em>&times; N copies</em>, and <strong>Fix duplicates</strong> removes every copy in one click,
+always keeping the original.</li>
+<li>Deleted pins go to a <strong>recycle bin</strong> with restore, and the last bulk operation can be undone.
+Optional automatic backups before bulk operations are available in the config.</li>
+</ul>
+
+<h2>Per-pin actions</h2>
+
+<ul>
+<li><strong>Edit</strong> opens the familiar vanilla waypoint dialog.</li>
+<li><strong>Move</strong> re-creates a pin at new coordinates.</li>
+<li><strong>Map</strong> (or double-clicking a row) centres the world map on the pin.</li>
+<li><strong>Share</strong> sends a pin to chat or copies its command to the clipboard for Discord.
+Friends who also run Pin Matrix get a clickable &quot;add this waypoint&quot; link in chat;
+everyone else still sees the plain text and can use the copied command.</li>
+</ul>
+
+<h2>Import / export</h2>
+
+<p>Export your waypoints to a file and import them elsewhere &mdash; re-imports skip anything
+you already have, so it's safe to run twice.</p>
+
+<h2>Good to know</h2>
+
+<ul>
+<li>Because the mod is client-side, bulk operations run through chat commands, so the server
+echoes one &quot;Ok, waypoint added&quot; style line per pin. Harmless, just chatty.</li>
+<li>Waypoints shared with you by group members (owned by other players) are hidden on purpose
+&mdash; the game only allows managing your own.</li>
+<li>Settings live in <code>ModConfig/pinmatrix.json</code>: rows per page, bulk-operation throttle,
+recycle bin size, map-button position override, the <strong>P</strong> shortcut on/off, and more.</li>
+<li>Tested for compatibility alongside Waypointer, Translocator Paths, ProspectTogether,
+Boat Autopilot, and Status HUD Continued &mdash; each on its own and all together.</li>
+<li>Every release is run against real dedicated servers for <strong>1.22.0 through 1.22.7</strong>
+before it ships.</li>
+</ul>
