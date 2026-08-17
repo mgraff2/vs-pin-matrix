@@ -1,5 +1,5 @@
 <p><strong>A spreadsheet for your waypoints.</strong> Pin Matrix puts every waypoint you own
-into one sortable, filterable table so you can find, tidy, retint, and share them in bulk
+into one sortable, filterable table so you can find, tidy, retint, hide, and share them in bulk
 &mdash; instead of clicking pins one at a time on the map.</p>
 
 <p>Fully <strong>client-side</strong>: install it locally and it works on any server, vanilla or modded.
@@ -18,7 +18,8 @@ and Pin Matrix stays shut.</p>
 <h2>The table</h2>
 
 <ul>
-<li><strong>Sort</strong> by name, icon, colour, X/Y/Z, distance, or pinned state &mdash; click any column header.</li>
+<li><strong>Sort</strong> by name, icon, colour, X/Y/Z, distance, pinned state, or whether the pin is
+showing on the map &mdash; click any column header.</li>
 <li><strong>Filter</strong> with text search, an icon strip, a pinned-only toggle, and a colour dropdown
 that shows painted swatches with live counts &mdash; only colours your pins actually use.</li>
 <li><strong>Distance filter</strong> with a slider: drag it out from &quot;off&quot; and your pins appear in growing
@@ -26,6 +27,25 @@ rings around you. The <strong>Next pin</strong> button widens the radius just en
 next-nearest pin &mdash; a one-button expanding search.</li>
 <li>Coordinates display the same way your HUD does (X/Z relative to spawn), so what you see is
 what you'd say in chat.</li>
+</ul>
+
+<h2>Hide the clutter</h2>
+
+<p>You don't need to see every copper node and resin tree all the time &mdash; only when you're
+going after copper or resin. Switch a pin off with the eye in its <strong>Vis</strong> column and it
+disappears from the world map and the minimap, while staying right where it is: still on the server,
+still in the table, still searchable and editable, ready to switch back on.</p>
+
+<ul>
+<li>Do it in bulk the same way you do everything else: filter to the copper icon,
+<strong>Select all filtered</strong>, <strong>Hide</strong>. Instant, both directions &mdash; nothing
+is sent to the server, so there's no confirmation screen and no chat spam.</li>
+<li>A <strong>Show: all / visible / hidden</strong> button filters the table by what's switched on,
+working alongside every other filter, and a standing <em>N hidden</em> count keeps you honest.</li>
+<li><strong>Next pin</strong> and the distance slider skip hidden pins, so an expanding search doesn't
+keep landing on pins that aren't on your map.</li>
+<li><strong>Nothing is deleted to hide it.</strong> Your waypoints are untouched &mdash; uninstall
+Pin Matrix and every hidden pin comes straight back.</li>
 </ul>
 
 <h2>Bulk editing</h2>
@@ -62,8 +82,11 @@ you already have, so it's safe to run twice.</p>
 <ul>
 <li>Because the mod is client-side, bulk operations run through chat commands, so the server
 echoes one &quot;Ok, waypoint added&quot; style line per pin. Harmless, just chatty.</li>
-<li>Waypoints shared with you by group members (owned by other players) are hidden on purpose
+<li>Waypoints shared with you by group members (owned by other players) are left out on purpose
 &mdash; the game only allows managing your own.</li>
+<li>Which pins you have hidden is remembered per world on your own PC (the game gives a client-side
+mod nowhere else to keep it), so it doesn't follow you to another computer unless you copy
+<code>ModData/pinmatrix/hidden-&lt;world&gt;.json</code> across.</li>
 <li>Settings live in <code>ModConfig/pinmatrix.json</code>: rows per page, bulk-operation throttle,
 recycle bin size, map-button position override, the <strong>P</strong> shortcut on/off, and more.</li>
 <li>Tested for compatibility alongside Waypointer, Translocator Paths, ProspectTogether,

@@ -13,10 +13,12 @@ namespace PinMatrix
         WaypointService svc;
         BatchEngine batch;
         RecycleBin bin;
+        WaypointVisibility visibility;
         GuiDialogPinMatrix dialog;
         HudPinMatrixMapButton mapButton;
         ChatShareLinks chatShareLinks;
         long mapWatchListenerId;
+        long visibilityListenerId;
         int settleTicksLeft;
 
         public override bool ShouldLoad(EnumAppSide forSide) => forSide == EnumAppSide.Client;
@@ -44,10 +46,23 @@ namespace PinMatrix
             capi.Input.SetHotKeyHandler("pinmatrix", OnHotkey);
 
             mapWatchListenerId = capi.Event.RegisterGameTickListener(OnMapWatchTick, 250);
+            // Separate from the 250ms watcher and deliberately per-frame: vanilla rebuilds its
+            // waypoint marker list on map-open and on every resync, and anything slower than this
+            // lets the hidden pins flash back onto the map for a few frames each time. The call
+            // returns immediately while nothing is hidden.
+            visibilityListenerId = capi.Event.RegisterGameTickListener(OnVisibilityTick, 20);
             chatShareLinks = new ChatShareLinks(capi);
         }
 
         /// <summary>Shows/hides the "Pin Matrix Editor" button in sync with the full world map dialog.</summary>
+        /// <summary>Re-hides the switched-off pins after each of vanilla's own marker rebuilds.</summary>
+        void OnVisibilityTick(float dt)
+        {
+            if (capi.World?.Player == null) return;
+            EnsureServices();
+            visibility.Apply();
+        }
+
         void OnMapWatchTick(float dt)
         {
             if (capi.World?.Player == null) return;
@@ -188,13 +203,23 @@ namespace PinMatrix
             if (!dialog.IsOpened()) dialog.TryOpen();
         }
 
+        /// <summary>
+        /// Built on the first watcher tick rather than in <c>StartClientSide</c>: the hidden-pin file
+        /// is named after the savegame, which is only known once the world is actually joined.
+        /// </summary>
+        void EnsureServices()
+        {
+            if (svc == null) svc = new WaypointService(capi);
+            if (visibility == null) visibility = new WaypointVisibility(capi, svc);
+        }
+
         void EnsureDialog()
         {
             if (dialog != null) return;
-            svc = new WaypointService(capi);
+            EnsureServices();
             batch = new BatchEngine(capi, config);
             bin = new RecycleBin(capi, config);
-            dialog = new GuiDialogPinMatrix(capi, config, svc, batch, bin);
+            dialog = new GuiDialogPinMatrix(capi, config, svc, batch, bin, visibility);
         }
 
         bool OnHotkey(KeyCombination comb)
@@ -221,8 +246,16 @@ namespace PinMatrix
                 capi.Event.UnregisterGameTickListener(mapWatchListenerId);
                 mapWatchListenerId = 0;
             }
+            if (visibilityListenerId != 0 && capi != null)
+            {
+                capi.Event.UnregisterGameTickListener(visibilityListenerId);
+                visibilityListenerId = 0;
+            }
             mapButton?.Dispose();
             mapButton = null;
+            // Rebuilt on the next world: the hidden-pin list is per savegame
+            visibility = null;
+            svc = null;
             chatShareLinks?.Dispose();
             chatShareLinks = null;
             dialog?.Dispose();

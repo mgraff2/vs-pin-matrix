@@ -5,7 +5,7 @@ Spec: [pin-matrix-mod-spec.md](pin-matrix-mod-spec.md).
 
 ## Installed & ready
 
-`dist/pinmatrix_1.3.2.zip` is already copied to `%APPDATA%\VintagestoryData\Mods\`. Launch the game, load a world, open the map (**M**) and click the **Pin Matrix Editor** button (top right). Optionally bind a hotkey to "Pin Matrix (waypoint manager)" in Settings → Controls — it ships unbound.
+`dist/pinmatrix_1.4.0.zip` is already copied to `%APPDATA%\VintagestoryData\Mods\`. Launch the game, load a world, open the map (**M**) and click the **Pin Matrix Editor** button (top right). Optionally bind a hotkey to "Pin Matrix (waypoint manager)" in Settings → Controls — it ships unbound.
 
 ## Building
 
@@ -25,12 +25,13 @@ Package = zip of `modinfo.json` + `bin/Release/PinMatrix.dll`.
 1. **Read-only pass:** open dialog (P) — table lists your waypoints; sort by clicking headers; search/filters; pagination. Try the radius slider: sort by Dist, then drag the slider next to "Within … blocks" slowly right from "off" — the nearest pins should appear in growing rings (10, 25, 50, … 10000); mouse wheel over the slider ticks one notch. Typing an exact number in the box still works and snaps the slider handle to the nearest notch. **Next pin** starts from "off" showing only your closest pin and reveals one more distance shell per click (respecting the other filters); at the last pin it reports "No pins beyond the current radius."
 2. **Colour filter:** open the colour dropdown — every entry should be a painted swatch + hex + count, listing only colours your waypoints actually use, sorted round the colour wheel with greys first, and nothing ticked on a fresh open. Type in the search box or click an icon in the strip and reopen the dropdown: the counts must have followed those filters. Ticking a colour must *not* change the other entries' counts.
 3. **Duplicates:** make 3 identical pins (New pin, same name/icon/colour/position), then flip **Group dupes** — they collapse to one row marked `x 3 copies`. Click the header to unfold, click its checkbox to select all three, click the header again to refold. Then **Fix duplicates (N)...** → the preview must list exactly 2 of them (the original is kept) → confirm → restore from the recycle bin afterwards.
-4. **Selection:** click rows (toggles), shift-click (range), "Select all filtered".
-5. **The §4 index-shift test:** create 5 pins (`New pin...`), select #1/#3/#5, Delete → confirm — #2/#4 must survive. Restore from bin afterwards.
-6. **Bulk edit:** filter to an icon, select all filtered, Set color → preview shows before→after → confirm. Then "Undo last bulk".
-7. **Row actions:** Edit (opens the vanilla waypoint dialog — it must appear *in front of* the Pin Matrix window, with typing landing in its title box immediately), Map (centers the world map), Move (re-creates at new coords), Share (chat/clipboard sharing), double-click row = show on map.
-8. **Export/Import:** export all, then re-import the same file — everything should be skipped as duplicates.
-9. **Share:** row Share button → "Send to chat" posts the share line and (because your own client also runs Pin Matrix) a clickable "[Pin Matrix] Click here to add..." line should follow it — clicking shows the vanilla confirm prompt and re-creates the pin (a duplicate, since you already own it — delete it after). "Copy command" → paste into Notepad/Discord, then paste into the chat box and send — same pin appears.
+4. **Hide/show (1.4.0):** click the eye in the **Vis** column of one row — the pin must vanish from the world map *and* the minimap (open the map to check) while the row stays in the table, dimmed, with a struck-through eye; the `N hidden` count appears by the pagination controls. Click it again to bring it back. Then the real workflow: filter to one icon → **Select all filtered** → **Hide** → the map loses that whole class of pin instantly (no chat spam, no confirm screen) → **Show** restores them. Cycle the **Show: all / visible / hidden** button and confirm the table follows it. With hidden pins present and the filter on **all**, **Next pin** and the radius slider must walk past them; switch to **Show: hidden** and they must work on the hidden ones instead. Finally: hide a few pins, leave the world, come back — they must still be hidden (state is per savegame); delete a hidden pin via the recycle bin round trip and its restored copy must come back visible.
+5. **Selection:** click rows (toggles), shift-click (range), "Select all filtered".
+6. **The §4 index-shift test:** create 5 pins (`New pin...`), select #1/#3/#5, Delete → confirm — #2/#4 must survive. Restore from bin afterwards.
+7. **Bulk edit:** filter to an icon, select all filtered, Set color → preview shows before→after → confirm. Then "Undo last bulk".
+8. **Row actions:** Edit (opens the vanilla waypoint dialog — it must appear *in front of* the Pin Matrix window, with typing landing in its title box immediately), Map (centers the world map), Move (re-creates at new coords), Share (chat/clipboard sharing), double-click row = show on map.
+9. **Export/Import:** export all, then re-import the same file — everything should be skipped as duplicates.
+10. **Share:** row Share button → "Send to chat" posts the share line and (because your own client also runs Pin Matrix) a clickable "[Pin Matrix] Click here to add..." line should follow it — clicking shows the vanilla confirm prompt and re-creates the pin (a duplicate, since you already own it — delete it after). "Copy command" → paste into Notepad/Discord, then paste into the chat box and send — same pin appears.
 
 ## Implementation notes / deviations from spec
 
@@ -42,6 +43,8 @@ Package = zip of `modinfo.json` + `bin/Release/PinMatrix.dll`.
 - **Filter dropdowns** re-apply their state after a recompose (sort click / refresh); the underlying filter state is authoritative.
 - **Group-shared waypoints** (owned by other players) are intentionally hidden: `/waypoint modify|remove` indices count own waypoints only — managing the synced-but-not-owned entries would corrupt the index space (verified against 1.22.6 server code).
 - **Sharing is plain text on the wire**: the server escapes `<`/`>` in player chat, so a client-side mod cannot send a clickable VTML link. The share line is `[Pin Matrix] Name (x, y, z) | icon #color [pinned]` — receiving clients that run Pin Matrix parse it (`ChatShareLinks`) and locally print a clickable `command://` link with vanilla's confirm prompt. The tail carries the pin's look because chat has no hidden data channel; the command itself is never put in chat (chat text can't be selected/copied — clipboard via the Share screen's "Copy command" instead). Titles are stripped of `<>"&|` on share so they survive the round trip. See the 1.1.1 design notes in [CHANGELOG.md](CHANGELOG.md) for the full rationale.
+- **Hiding is a client-side render filter, not waypoint data.** Vanilla's `Waypoint` has no visibility field, so hidden pins are a Pin Matrix concept: the mod drops their map components from `WaypointMapLayer`'s private render list (rebuilt on map-open and each resync, so it re-applies from the existing watcher tick) and never touches the waypoints themselves. Consequences worth knowing: the state is per savegame and local only (`ModData/pinmatrix/hidden-<savegame>.json`), it is not exported or shared, hidden pins still exist server-side and still show in `/waypoint list`, another mod that draws its own markers from the waypoint list would still draw them, and uninstalling Pin Matrix brings every hidden pin straight back. If a future game version renames those private fields the feature disables itself with a logged warning and everything becomes visible again — see the 1.4.0 design notes in [CHANGELOG.md](CHANGELOG.md).
+- **`ownWaypoints` is deliberately never trimmed** to hide pins, though it is public and it would be easier: `/waypoint modify|remove` indices are positions in that list, so removing entries would silently point every later edit — vanilla's own map editor included — at the wrong waypoint.
 - **Map refresh** button exists behind `EnableMapRefresh` (default off) in `ModConfig/pinmatrix.json`; it invokes vanilla's client-side `.map redraw` command.
 - The hotkey ships **unbound** (assign one under Settings → Controls if wanted); the map-screen button is the primary entry point. No hotkey entry in the mod config (vanilla controls are the single source of truth).
 
@@ -82,7 +85,14 @@ pre-release checklist for what the server can't see:
    the table must track waypoints those mods add, and nothing may corrupt indices (§4 test
    in "What to test first").
 4. Share round trip: "Send to chat" → clickable add-link appears and works.
-5. **Keyboard hand-off** (regression, 1.3.2): with Boat Autopilot active, click into its
+5. **Hidden pins survive the map's own rebuilds** (1.4.0 — the headless test cannot see any of
+   this): hide a pin, then force vanilla to rebuild its marker list several ways — close and
+   reopen the map, pan far enough to trigger a resync, press **Refresh** in the matrix, add a
+   new waypoint — the pin must stay off the map each time, and the minimap too. Confirm a
+   hidden *pinned* waypoint also loses its screen-edge arrow. With Waypointer / Translocator
+   Paths active, check whether their own markers still appear for a hidden pin (they read the
+   waypoint list themselves; that is expected, not a bug — worth knowing about).
+6. **Keyboard hand-off** (regression, 1.3.2): with Boat Autopilot active, click into its
    route-name or filter box on the map screen and type a name containing `p` — the letter
    must land in the box and Pin Matrix must not open. Then click the map itself and press
    `P` — the editor must open. Repeat for any other mod that puts a text field on the map.
@@ -97,4 +107,4 @@ another map-HUD mod shares the corner and the automatic placement picks a spot y
 `MapButtonShortcutKey` (true — the map button's plain `P` shortcut; it already stands down while any text
 field has focus, so set it false only to free the key up entirely).
 
-Recycle bin + exports live in `VintagestoryData/ModData/pinmatrix/`.
+Recycle bin, exports and the per-savegame hidden-pin list live in `VintagestoryData/ModData/pinmatrix/`.

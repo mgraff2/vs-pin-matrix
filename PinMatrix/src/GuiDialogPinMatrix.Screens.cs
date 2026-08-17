@@ -119,14 +119,19 @@ namespace PinMatrix
         /// Deletes every copy but one from each set of pins identical in all columns. Deliberately
         /// scans the whole waypoint list rather than the current view — a filter hiding part of a
         /// duplicate set would otherwise leave copies behind while reporting the job done. The kept
-        /// copy is the earliest one in the layer's own index order, i.e. the original.
+        /// copy is the earliest one in the layer's own index order, i.e. the original — except that
+        /// a copy still drawn on the map always beats a hidden one, so cleaning up duplicates can
+        /// never leave the survivor invisible.
         /// </summary>
+        /// <summary>The copy of a duplicate set that survives: the first visible one, else the first.</summary>
+        PinRow KeptCopy(DupGroup g) => g.Rows.FirstOrDefault(r => !IsHidden(r)) ?? g.Rows[0];
+
         void BuildFixDuplicates()
         {
             if (batch.Busy) { notice = "A bulk operation is still running..."; UpdateMatrixDynamic(); return; }
 
             var dupSets = GroupByDuplicate(allRows).Where(g => g.Rows.Count > 1).ToList();
-            var doomed = dupSets.SelectMany(g => g.Rows.Skip(1)).ToList();
+            var doomed = dupSets.SelectMany(g => g.Rows.Where(r => r != KeptCopy(g))).ToList();
             if (doomed.Count == 0)
             {
                 notice = "No duplicate pins found — every pin differs from the others in at least one column.";

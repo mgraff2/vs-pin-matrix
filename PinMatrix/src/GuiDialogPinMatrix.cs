@@ -27,6 +27,9 @@ namespace PinMatrix
         public PmScreen ReturnScreen = PmScreen.Matrix;
     }
 
+    /// <summary>Which side of the hidden/visible split the table shows. Cycled by one button.</summary>
+    public enum VisFilter { All = 0, VisibleOnly = 1, HiddenOnly = 2 }
+
     /// <summary>A set of pins identical in every displayed column — i.e. duplicates of each other.</summary>
     public class DupGroup
     {
@@ -52,22 +55,25 @@ namespace PinMatrix
         const double RowH = 25;
         const double ConfRowH = 22;
 
-        // table columns: x, width
+        // table columns: x, width. The Vis column's 36px came out of the Name column — the row is
+        // packed to the pixel and the Actions column has no slack left (4 mini buttons at 46).
         const double ColSelX = 4, ColSelW = 26;
-        const double ColNameX = 34, ColNameW = 240;
-        const double ColIconX = 278, ColIconW = 78;
-        const double ColColorX = 360, ColColorW = 60;
-        const double ColXX = 424, ColXW = 60;
-        const double ColYX = 488, ColYW = 46;
-        const double ColZX = 538, ColZW = 60;
-        const double ColDistX = 602, ColDistW = 62;
-        const double ColPinX = 668, ColPinW = 34;
-        const double ColActX = 706, ColActW = 186;
+        const double ColNameX = 34, ColNameW = 204;
+        const double ColIconX = 242, ColIconW = 78;
+        const double ColColorX = 324, ColColorW = 60;
+        const double ColXX = 388, ColXW = 60;
+        const double ColYX = 452, ColYW = 46;
+        const double ColZX = 502, ColZW = 60;
+        const double ColDistX = 566, ColDistW = 62;
+        const double ColVisX = 632, ColVisW = 34;
+        const double ColPinX = 670, ColPinW = 34;
+        const double ColActX = 708, ColActW = 186;
 
         readonly PinMatrixConfig config;
         readonly WaypointService svc;
         readonly BatchEngine batch;
         readonly RecycleBin bin;
+        readonly WaypointVisibility visibility;
 
         PmScreen screen = PmScreen.Matrix;
         string notice = "";
@@ -91,8 +97,9 @@ namespace PinMatrix
         readonly HashSet<string> colorFilter = new HashSet<string>();   // "#rrggbb" values
         bool pinnedOnly;
         double radius;                                                   // <= 0 means off
+        VisFilter visFilter = VisFilter.All;                             // hidden pins: show all / only visible / only hidden
 
-        // sort: 0 name, 1 icon, 2 color, 3 x, 4 y, 5 z, 6 dist, 7 pinned
+        // sort: 0 name, 1 icon, 2 color, 3 x, 4 y, 5 z, 6 dist, 7 pinned, 8 visible
         int sortCol = 0;
         bool sortAsc = true;
 
@@ -113,9 +120,12 @@ namespace PinMatrix
         // icon filter strip
         const double IconCellW = 28;
         const double IconCellH = 26;
-        const int IconsPerStripRow = 27;
+        // 24 rather than as many as fit: the tail of the strip row is where the visibility filter
+        // lives, and the vanilla icon set wraps to the same two rows either way.
+        const int IconsPerStripRow = 24;
         static readonly double[] IconWhite = { 1, 1, 1, 1 };
-        static readonly double[] IconDim = { 1, 1, 1, 0.45 };
+        static readonly double[] IconDim = { 1, 1, 1, 0.45 };        // unpicked icons in the filter strip
+        static readonly double[] IconHiddenRow = { 1, 1, 1, 0.7 };   // matches the dimmed text of a hidden row
         string[] stripIcons = new string[0];
         ElementBounds iconStripBounds;
         readonly HashSet<string> probedIcons = new HashSet<string>();
@@ -129,13 +139,14 @@ namespace PinMatrix
         int PageSize => config.RowsPerPage;
         int MaxPage => Math.Max(0, (gridLines.Count - 1) / PageSize);
 
-        public GuiDialogPinMatrix(ICoreClientAPI capi, PinMatrixConfig config, WaypointService svc, BatchEngine batch, RecycleBin bin)
+        public GuiDialogPinMatrix(ICoreClientAPI capi, PinMatrixConfig config, WaypointService svc, BatchEngine batch, RecycleBin bin, WaypointVisibility visibility)
             : base(capi)
         {
             this.config = config;
             this.svc = svc;
             this.batch = batch;
             this.bin = bin;
+            this.visibility = visibility;
             tickListenerId = capi.World.RegisterGameTickListener(OnPollTick, 1000);
         }
 
@@ -192,6 +203,9 @@ namespace PinMatrix
             }
 
             selectedKeys.IntersectWith(allRows.Select(r => r.Key));
+            // Waypoints arrive as one complete list, so anything hidden that isn't in it is gone for
+            // good and its key can be dropped (guarded inside against pruning off an empty sync).
+            visibility.PruneTo(new HashSet<string>(allRows.Select(r => r.Key)));
             anchorRow = -1;
             RebuildColorFilterValues();
             ApplyView();
@@ -271,6 +285,16 @@ namespace PinMatrix
             dd.SetSelectedValue(colorFilter.ToArray());   // re-ticks the switches and repaints the collapsed label
         }
 
+        bool IsHidden(PinRow r) => visibility.IsHidden(r.Key);
+
+        /// <summary>
+        /// Whether the distance tools should look past hidden pins. "Hidden" means "not now", so
+        /// walking the nearest pins or drawing a radius ring around the player skips them — unless
+        /// the table is deliberately showing the hidden ones, where skipping them would leave the
+        /// distance tools with nothing to work on.
+        /// </summary>
+        bool DistanceToolsSkipHidden => visFilter != VisFilter.HiddenOnly;
+
         IEnumerable<PinRow> Filtered(bool useColor, bool useRadius)
         {
             IEnumerable<PinRow> q = allRows;
@@ -278,12 +302,23 @@ namespace PinMatrix
             if (iconFilter.Count > 0) q = q.Where(r => iconFilter.Contains(WpCommands.SafeIcon(r.Wp.Icon)));
             if (useColor && colorFilter.Count > 0) q = q.Where(r => colorFilter.Contains(WpCommands.ColorHex(r.Wp.Color)));
             if (pinnedOnly) q = q.Where(r => r.Wp.Pinned);
-            if (useRadius && radius > 0) q = q.Where(r => r.Dist <= radius);
+            if (visFilter == VisFilter.VisibleOnly) q = q.Where(r => !IsHidden(r));
+            else if (visFilter == VisFilter.HiddenOnly) q = q.Where(IsHidden);
+            if (useRadius && radius > 0)
+            {
+                q = DistanceToolsSkipHidden
+                    ? q.Where(r => r.Dist <= radius && !IsHidden(r))
+                    : q.Where(r => r.Dist <= radius);
+            }
             return q;
         }
 
         /// <summary>All filters except the radius — also the candidate set for "Next pin".</summary>
-        IEnumerable<PinRow> FilteredExceptRadius() => Filtered(useColor: true, useRadius: false);
+        IEnumerable<PinRow> FilteredExceptRadius()
+        {
+            var q = Filtered(useColor: true, useRadius: false);
+            return DistanceToolsSkipHidden ? q.Where(r => !IsHidden(r)) : q;
+        }
 
         /// <summary>
         /// All filters except the colour filter — the base set the colour dropdown counts against.
@@ -306,6 +341,7 @@ namespace PinMatrix
                 case 5: q = Sorted(q, r => r.Wp.Position.Z, Comparer<double>.Default); break;
                 case 6: q = Sorted(q, r => r.Dist, Comparer<double>.Default); break;
                 case 7: q = Sorted(q, r => r.Wp.Pinned ? 1 : 0, Comparer<int>.Default); break;
+                case 8: q = Sorted(q, r => IsHidden(r) ? 1 : 0, Comparer<int>.Default); break;
             }
 
             viewRows = q.ToList();
@@ -523,6 +559,7 @@ namespace PinMatrix
             c.AddInset(EB(56, y - 2, IconsPerStripRow * IconCellW + 8, stripH + 4), 3);
             iconStripBounds = EB(60, y, IconsPerStripRow * IconCellW, stripH);
             c.AddDynamicCustomDraw(iconStripBounds, DrawIconStrip, "iconstrip");
+            c.AddSmallButton(VisFilterLabel(), OnVisFilterClicked, EB(744, y - 2, 148, 26), EnumButtonStyle.Small);
 
             // selection row
             y += stripH + 10;
@@ -545,6 +582,7 @@ namespace PinMatrix
             AddHeaderButton(c, "Y", 4, ColYX, ColYW, y);
             AddHeaderButton(c, "Z", 5, ColZX, ColZW, y);
             AddHeaderButton(c, "Dist", 6, ColDistX, ColDistW, y);
+            AddHeaderButton(c, "Vis", 8, ColVisX, ColVisW, y);
             AddHeaderButton(c, "Pin", 7, ColPinX, ColPinW, y);
             c.AddStaticText("Actions", font, EB(ColActX + 4, y + 3, ColActW - 8, 24));
 
@@ -560,7 +598,11 @@ namespace PinMatrix
             c.AddSmallButton("< Prev", OnPrevPage, EB(4, y, 78, 26));
             c.AddDynamicText(PageText(), font.Clone().WithOrientation(EnumTextOrientation.Center), EB(86, y + 4, 110, 24), "pageinfo");
             c.AddSmallButton("Next >", OnNextPage, EB(200, y, 78, 26));
-            c.AddDynamicText(notice, font.Clone().WithOrientation(EnumTextOrientation.Right), EB(286, y + 4, DW - 286, 24), "notice");
+            // Standing count of switched-off pins, kept out of the status line (which has no room)
+            // and off the transient notice: hidden pins draw nowhere on the map, so the one thing
+            // that must never happen is a player forgetting they have any.
+            c.AddDynamicText(HiddenText(), font, EB(286, y + 4, 130, 24), "hiddeninfo");
+            c.AddDynamicText(notice, font.Clone().WithOrientation(EnumTextOrientation.Right), EB(420, y + 4, DW - 420, 24), "notice");
 
             // action row A — mutations
             y += 34;
@@ -583,9 +625,13 @@ namespace PinMatrix
             // Refresh lives here with the other utilities: the selection row it used to share needed
             // the width for the grouping toggle, and this row has room to spare.
             c.AddSmallButton("Refresh", OnRefreshClicked, EB(442, y, 88, 28));
+            // Hide/Show belong on this row, not with the mutations above: they change nothing on the
+            // server, take effect instantly and are undone by clicking the other one.
+            c.AddSmallButton("Hide", () => { ApplyVisibility(true); return true; }, EB(536, y, 56, 28));
+            c.AddSmallButton("Show", () => { ApplyVisibility(false); return true; }, EB(596, y, 58, 28));
             if (config.EnableMapRefresh)
             {
-                c.AddSmallButton("Redraw map", () => { ExecuteMapRedraw(); return true; }, EB(536, y, 120, 28));
+                c.AddSmallButton("Redraw map", () => { ExecuteMapRedraw(); return true; }, EB(660, y, 86, 28));
             }
             c.AddSmallButton("Back to map", () => { OnBackToMap(); return true; }, EB(DW - 146, y, 142, 28));
         }
@@ -630,6 +676,18 @@ namespace PinMatrix
         string StatusText() => $"{allRows.Count} pins · {viewRows.Count} shown · {selectedKeys.Count} selected";
         string PageText() => $"Page {page + 1}/{MaxPage + 1}";
 
+        string HiddenText() => visibility.HiddenCount > 0 ? $"{visibility.HiddenCount} hidden" : "";
+
+        string VisFilterLabel()
+        {
+            switch (visFilter)
+            {
+                case VisFilter.VisibleOnly: return "Show: visible";
+                case VisFilter.HiddenOnly: return "Show: hidden";
+                default: return "Show: all";
+            }
+        }
+
         void UpdateMatrixDynamic()
         {
             if (screen != PmScreen.Matrix || SingleComposer == null) return;
@@ -637,6 +695,7 @@ namespace PinMatrix
             (SingleComposer.GetElement("iconstrip") as GuiElementCustomDraw)?.Redraw();
             SingleComposer.GetDynamicText("status")?.SetNewText(StatusText(), false, true, false);
             SingleComposer.GetDynamicText("pageinfo")?.SetNewText(PageText(), false, true, false);
+            SingleComposer.GetDynamicText("hiddeninfo")?.SetNewText(HiddenText(), false, true, false);
             SingleComposer.GetDynamicText("notice")?.SetNewText(notice, false, true, false);
             RefreshColorFilterLabels();
         }
@@ -809,6 +868,47 @@ namespace PinMatrix
             UpdateMatrixDynamic();
         }
 
+        bool OnVisFilterClicked()
+        {
+            visFilter = (VisFilter)(((int)visFilter + 1) % 3);
+            page = 0;
+            anchorRow = -1;
+            ApplyView();
+            Recompose();    // the button's own label is what says which state it is in
+            return true;
+        }
+
+        /// <summary>
+        /// Switches the selected pins off the map (or back on). Nothing is sent to the server and
+        /// nothing is deleted — see <see cref="WaypointVisibility"/> — so this needs no confirmation
+        /// screen, no batching and no undo entry: clicking the other button puts it back.
+        /// </summary>
+        void ApplyVisibility(bool hide)
+        {
+            if (!GuardSelection(out var rows)) return;
+
+            if (!visibility.Available)
+            {
+                notice = "Hiding pins is not available on this game version — see the client log.";
+                UpdateMatrixDynamic();
+                return;
+            }
+
+            int changed = visibility.Set(rows.Select(r => r.Key), hide);
+            if (changed == 0)
+            {
+                notice = hide ? "All selected pins are already hidden." : "None of the selected pins are hidden.";
+                UpdateMatrixDynamic();
+                return;
+            }
+
+            notice = hide
+                ? $"Hid {changed} pins — still here, just not drawn on the map."
+                : $"Restored {changed} pins to the map.";
+            ApplyView();        // they may drop out of the current view
+            UpdateMatrixDynamic();
+        }
+
         void OnPinnedOnlyToggled(bool on)
         {
             pinnedOnly = on;
@@ -910,6 +1010,7 @@ namespace PinMatrix
             colorFilter.Clear();
             pinnedOnly = false;
             radius = 0;
+            visFilter = VisFilter.All;
             ApplyView();
             Recompose();    // reset filter widgets visually
             return true;
@@ -955,6 +1056,10 @@ namespace PinMatrix
         void DrawTable(Context ctx, ImageSurface surface, ElementBounds bounds)
         {
             var font = CairoFont.WhiteSmallText();
+            // Hidden pins draw the same row, dimmed — they are still yours, just not on the map.
+            // Dim enough to read at a glance as "switched off", never so dim it stops being legible:
+            // the table is where you go to find a hidden pin again.
+            var dimFont = font.Clone().WithColor(new double[] { 1, 1, 1, 0.7 });
             double rh = GuiElement.scaled(RowH);
             double innerW = GuiElement.scaled(DW);
 
@@ -977,6 +1082,9 @@ namespace PinMatrix
                 var row = group != null ? group.Rows[0] : line.Row;
                 var wp = row.Wp;
                 double ry = i * rh;
+                // A group draws as one row, so it counts as hidden only when every copy in it is
+                bool hiddenRow = group != null ? group.Rows.All(IsHidden) : IsHidden(row);
+                var rowFont = hiddenRow ? dimFont : font;
                 bool isSel = group != null
                     ? group.Rows.All(r => selectedKeys.Contains(r.Key))
                     : selectedKeys.Contains(row.Key);
@@ -1025,12 +1133,12 @@ namespace PinMatrix
                 }
                 else if (isMember) nameIndent = 13;
 
-                DrawCell(ctx, font, wp.Title ?? "", ColNameX + nameIndent, ColNameW - nameIndent, ry, rh);
-                DrawIconGlyph(ctx, WpCommands.SafeIcon(wp.Icon), GuiElement.scaled(ColIconX + 24), ry + GuiElement.scaled(2.5), GuiElement.scaled(20), IconWhite);
+                DrawCell(ctx, rowFont, wp.Title ?? "", ColNameX + nameIndent, ColNameW - nameIndent, ry, rh);
+                DrawIconGlyph(ctx, WpCommands.SafeIcon(wp.Icon), GuiElement.scaled(ColIconX + 24), ry + GuiElement.scaled(2.5), GuiElement.scaled(20), hiddenRow ? IconHiddenRow : IconWhite);
 
                 // color swatch
                 int col = wp.Color;
-                ctx.SetSourceRGBA(((col >> 16) & 0xff) / 255.0, ((col >> 8) & 0xff) / 255.0, (col & 0xff) / 255.0, 1);
+                ctx.SetSourceRGBA(((col >> 16) & 0xff) / 255.0, ((col >> 8) & 0xff) / 255.0, (col & 0xff) / 255.0, hiddenRow ? 0.65 : 1);
                 ctx.Rectangle(GuiElement.scaled(ColColorX + 8), ry + GuiElement.scaled(5), GuiElement.scaled(38), rh - GuiElement.scaled(10));
                 ctx.Fill();
                 ctx.SetSourceRGBA(0, 0, 0, 0.5);
@@ -1038,16 +1146,17 @@ namespace PinMatrix
                 ctx.Rectangle(GuiElement.scaled(ColColorX + 8), ry + GuiElement.scaled(5), GuiElement.scaled(38), rh - GuiElement.scaled(10));
                 ctx.Stroke();
 
-                DrawCell(ctx, font, FmtCoord(svc.RelX(wp.Position.X)), ColXX, ColXW, ry, rh);
-                DrawCell(ctx, font, FmtCoord(wp.Position.Y), ColYX, ColYW, ry, rh);
-                DrawCell(ctx, font, FmtCoord(svc.RelZ(wp.Position.Z)), ColZX, ColZW, ry, rh);
-                DrawCell(ctx, font, FmtDist(row.Dist), ColDistX, ColDistW, ry, rh);
-                DrawCell(ctx, font, wp.Pinned ? "Y" : "", ColPinX, ColPinW, ry, rh);
+                DrawCell(ctx, rowFont, FmtCoord(svc.RelX(wp.Position.X)), ColXX, ColXW, ry, rh);
+                DrawCell(ctx, rowFont, FmtCoord(wp.Position.Y), ColYX, ColYW, ry, rh);
+                DrawCell(ctx, rowFont, FmtCoord(svc.RelZ(wp.Position.Z)), ColZX, ColZW, ry, rh);
+                DrawCell(ctx, rowFont, FmtDist(row.Dist), ColDistX, ColDistW, ry, rh);
+                DrawEye(ctx, ColVisX, ColVisW, ry, rh, !hiddenRow);
+                DrawCell(ctx, rowFont, wp.Pinned ? "Y" : "", ColPinX, ColPinW, ry, rh);
 
                 if (group != null)
                 {
                     // no per-row actions on a header: they would be ambiguous across N identical pins
-                    DrawCell(ctx, font, $"x {group.Rows.Count} copies", ColActX, ColActW, ry, rh);
+                    DrawCell(ctx, rowFont, $"x {group.Rows.Count} copies", ColActX, ColActW, ry, rh);
                     continue;
                 }
 
@@ -1078,6 +1187,45 @@ namespace PinMatrix
             ctx.ClosePath();
             ctx.SetSourceRGBA(0.95, 0.88, 0.7, 0.95);
             ctx.Fill();
+        }
+
+        /// <summary>
+        /// The Vis cell: an open eye when the pin is drawn on the map, a dim struck-through one when
+        /// it isn't. Clicking the cell toggles it — a Y/blank like the Pin column would have read as
+        /// data rather than as a switch, and this column is the switch.
+        /// </summary>
+        void DrawEye(Context ctx, double colX, double colW, double ry, double rh, bool visible)
+        {
+            double cx = GuiElement.scaled(colX + colW / 2);
+            double cy = ry + rh / 2;
+            double w = GuiElement.scaled(8);      // half-width of the lens
+            double h = GuiElement.scaled(4.6);    // half-height
+
+            if (visible) ctx.SetSourceRGBA(0.95, 0.92, 0.82, 0.95);
+            else ctx.SetSourceRGBA(0.85, 0.85, 0.85, 0.62);
+            ctx.LineWidth = GuiElement.scaled(1.3);
+
+            // lens: two arcs meeting at the corners, drawn as quadratic-ish curves
+            ctx.NewPath();
+            ctx.MoveTo(cx - w, cy);
+            ctx.CurveTo(cx - w * 0.5, cy - h, cx + w * 0.5, cy - h, cx + w, cy);
+            ctx.CurveTo(cx + w * 0.5, cy + h, cx - w * 0.5, cy + h, cx - w, cy);
+            ctx.ClosePath();
+            ctx.Stroke();
+
+            if (visible)
+            {
+                ctx.NewPath();
+                ctx.Arc(cx, cy, GuiElement.scaled(2.2), 0, Math.PI * 2);
+                ctx.Fill();
+            }
+            else
+            {
+                ctx.NewPath();
+                ctx.MoveTo(cx - w * 0.95, cy + h * 1.25);
+                ctx.LineTo(cx + w * 0.95, cy - h * 1.25);
+                ctx.Stroke();
+            }
         }
 
         void DrawCell(Context ctx, CairoFont font, string text, double colX, double colW, double ry, double rh)
@@ -1183,6 +1331,14 @@ namespace PinMatrix
             var group = gridLines[idx].Group;
             if (group != null)
             {
+                // the Vis cell switches every copy the header stands for, together
+                if (ux >= ColVisX && ux < ColVisX + ColVisW)
+                {
+                    ToggleVisibility(group.Rows);
+                    args.Handled = true;
+                    return;
+                }
+
                 // checkbox column selects the whole set; anywhere else folds it open or shut
                 if (ux < ColNameX)
                 {
@@ -1204,6 +1360,13 @@ namespace PinMatrix
             }
 
             var row = gridLines[idx].Row;
+
+            if (ux >= ColVisX && ux < ColVisX + ColVisW)
+            {
+                ToggleVisibility(new List<PinRow> { row });
+                args.Handled = true;
+                return;
+            }
 
             if (ux >= ColActX)
             {
@@ -1250,6 +1413,27 @@ namespace PinMatrix
         }
 
         // ------------------------------------------------------------------ row actions
+
+        /// <summary>
+        /// Flips the Vis cell for one row, or for every copy a duplicate header stands for. Mixed
+        /// sets hide as a whole first — "make these go away" is the common intent, and clicking again
+        /// brings all of them back.
+        /// </summary>
+        void ToggleVisibility(List<PinRow> rows)
+        {
+            if (!visibility.Available)
+            {
+                notice = "Hiding pins is not available on this game version — see the client log.";
+                UpdateMatrixDynamic();
+                return;
+            }
+
+            bool hide = rows.Any(r => !IsHidden(r));
+            visibility.Set(rows.Select(r => r.Key), hide);
+            anchorRow = -1;
+            ApplyView();        // the row may drop out of the current view
+            UpdateMatrixDynamic();
+        }
 
         void OpenVanillaEdit(PinRow row)
         {

@@ -2,6 +2,29 @@
 
 All notable changes to Pin Matrix are documented here.
 
+## [1.4.0] — 2026-08-16
+
+### Added
+- **Hide/show waypoints without deleting them** (requested by a player: *"I don't need to know where every copper node or resin tree is all the time, only when I need copper or resin"*). A hidden pin stops being drawn on the world map and the minimap — marker, hover text, pinned screen-edge arrow and middle-click editing all go with it — while staying exactly where it is on the server and staying listed, searchable and editable in the matrix.
+  - **Vis column** with a clickable eye per row: open eye = on the map, struck-through eye = hidden. Hidden rows draw dimmed. It sorts like any other column, and clicking the eye on a folded duplicate group switches every copy at once.
+  - **Hide / Show buttons** (utilities row) act on the selection, so the whole point of the feature is one pass: filter to the copper icon → **Select all filtered** → **Hide**. Instant — nothing is sent to the server, so there is no confirmation screen, no command throttle and no chat spam, in either direction.
+  - **Show: all / visible / hidden** filter button at the end of the icon strip, composing with search, icons, colour, pinned-only and radius like every other filter. Defaults to **all**, so hidden pins never quietly vanish from the table too.
+  - A standing **`N hidden`** count sits next to the pagination controls whenever anything is hidden.
+  - **The distance tools skip hidden pins**: "hidden" means "not now", so the radius filter and **Next pin** walk past them rather than repeatedly landing on pins that aren't on the map. Set the filter to **Show: hidden** and they work on the hidden set instead.
+  - Hidden state is stored per savegame in `ModData/pinmatrix/hidden-<savegame>.json` and is purely local: it is not shared, not exported, and pins restored from the recycle bin or re-created by **Move** come back visible (they are new waypoints with new Guids).
+
+### Design notes — why hiding is a render filter and not a delete
+- Vanilla's `Waypoint` has **no visibility field of any kind** (`Position, Title, Text, Color, Icon, ShowInWorld, Pinned, OwningPlayerUid, OwningPlayerGroupId, Temporary, Guid` — decompiled 1.22.6 VSEssentials), so "hidden" can only ever be this mod's own concept. That leaves two implementations: delete the waypoint and re-add it from a local copy, or leave it alone and skip drawing it.
+- **Delete-and-restore was rejected.** It is destructive — losing the mod or its JSON would lose the waypoints for good — it costs one chat command per pin in *both* directions (300 resin trees, twice a week), and every restore mints a fresh Guid, breaking identity for the recycle bin, sharing and any other mod. A feature whose whole purpose is toggling large batches back and forth has to be instant, free and incapable of losing data.
+- **What is actually done:** `WaypointMapLayer` draws markers by iterating a private `List<MapComponent> wayPointComponents`, rebuilt from `ownWaypoints` in `RebuildMapComponents()`. The full map and the minimap render through that one list, so dropping a component removes the pin everywhere at once with the waypoint itself untouched; `MapComponent.Dispose` is a no-op, so dropped components leak nothing. The list is rebuilt on map-open and on every server resync, so the filter is re-applied from the map-button watcher tick that already runs — and costs nothing at all until something is hidden.
+- **Deliberately *not* touching `ownWaypoints`,** even though it is public and trimming it would need no reflection: `/waypoint modify|remove` indices are positions in that list, so removing entries would silently redirect every subsequent edit — vanilla's own map editor included — at the wrong waypoint. Components are the only safe cut point.
+- **The reflection is the risk and it fails soft.** Both private field names are identical in 1.22.0 through 1.22.6 (checked against every server package in `tools/server-cache`). If a future version renames them, the feature disables itself with one logged warning and everything else carries on — pins already hidden simply come back into view, which is the right way to fail: visible and recoverable, never lost.
+- Hiding is a **client-side render filter, not a permission**: hidden pins still exist server-side, still appear in `/waypoint list`, and a mod that reads the waypoint list and draws its own markers would still draw them (none of the five compat companions do).
+
+### Changed
+- The icon filter strip wraps at 24 icons per row instead of 27 — the tail of that row is where the visibility filter button now lives, and the vanilla icon set occupies the same two rows either way.
+- The Name column gave up 36px to the new Vis column; long titles truncate a little sooner. The row is packed to the pixel and the Actions column had no slack.
+
 ## [1.3.2] — 2026-08-16
 
 ### Fixed
@@ -115,6 +138,7 @@ Initial release for Vintage Story 1.22.x.
 - Map screen button ("Pin Matrix Editor") and bindable hotkey.
 - Fully client-side — no server-side install required.
 
+[1.4.0]: https://github.com/mgraff2/vs-pin-matrix/releases/tag/v1.4.0
 [1.3.2]: https://github.com/mgraff2/vs-pin-matrix/releases/tag/v1.3.2
 [1.3.1]: https://github.com/mgraff2/vs-pin-matrix/releases/tag/v1.3.1
 [1.3.0]: https://github.com/mgraff2/vs-pin-matrix/releases/tag/v1.3.0
