@@ -13,14 +13,16 @@ namespace PinMatrix
     public class HudPinMatrixMapButton : GuiDialog
     {
         readonly Action onClick;
+        readonly PinMatrixConfig config;
         int rightMargin = DefaultRightMargin;
         int yOffset = DefaultYOffset;
 
         public const int DefaultYOffset = 120;
         public const int DefaultRightMargin = 100;
 
-        public HudPinMatrixMapButton(ICoreClientAPI capi, Action onClick) : base(capi)
+        public HudPinMatrixMapButton(ICoreClientAPI capi, PinMatrixConfig config, Action onClick) : base(capi)
         {
+            this.config = config;
             this.onClick = onClick;
             Compose();
         }
@@ -51,21 +53,54 @@ namespace PinMatrix
         // The full world map draws at 0.11; without this the button renders behind it
         public override double DrawOrder => 0.2;
 
-        // Not focusable, so opt in to keyboard events while shown (the P shortcut below)
-        public override bool ShouldReceiveKeyboardEvents() => IsOpened();
+        // Not focusable, so opt in to keyboard events while shown (the P shortcut below).
+        // Opted out entirely when the shortcut is off, so nothing of ours is in the key path at all.
+        public override bool ShouldReceiveKeyboardEvents() => IsOpened() && config.MapButtonShortcutKey;
 
         public override void OnKeyDown(KeyEvent args)
         {
             base.OnKeyDown(args);
             if (args.Handled) return;
+            if (!config.MapButtonShortcutKey) return;
             if (args.KeyCode != (int)GlKeys.P || args.CtrlPressed || args.AltPressed || args.ShiftPressed) return;
 
             // Only while the world map itself is the focused dialog — not chat or another input
             var mapDlg = capi.ModLoader.GetModSystem<WorldMapManager>()?.worldMapDlg;
             if (mapDlg == null || !mapDlg.IsOpened() || !mapDlg.Focused) return;
 
+            // ...and not while the player is typing into any text field (see TextInputHasFocus)
+            if (TextInputHasFocus(capi)) return;
+
             args.Handled = true;
             onClick?.Invoke();
+        }
+
+        /// <summary>
+        /// True when a text field anywhere in the open GUI has keyboard focus, i.e. the player is
+        /// typing rather than using a shortcut.
+        ///
+        /// CRITICAL compat (Boat Autopilot, and any mod that puts an input on the map screen).
+        /// Mods attach their map panels to the vanilla world map dialog as extra composers — Boat
+        /// Autopilot's route planner adds "worldmap-layer-boatroutes" with route-name and filter
+        /// text inputs. Vanilla's own protection against a shortcut eating those keystrokes is
+        /// GuiElementEditableTextBase.OnKeyDown, which marks *every* key handled while the field
+        /// has focus. That protection never reaches us: GuiManager dispatches OnKeyDown down
+        /// OpenedGuis in descending DrawOrder, and this HUD sits at 0.2 versus the map dialog's
+        /// 0.11 — so we see the keystroke first and would consume the "p" out of "Port Nowhere".
+        /// Checking focus directly is the only ordering-independent guard.
+        /// </summary>
+        public static bool TextInputHasFocus(ICoreClientAPI capi)
+        {
+            foreach (var gui in capi.Gui.OpenedGuis)
+            {
+                if (gui == null || !gui.IsOpened()) continue;
+                foreach (var compo in gui.Composers.Values)
+                {
+                    if (compo == null || !compo.Enabled) continue;
+                    if (compo.CurrentTabIndexElement is GuiElementEditableTextBase) return true;
+                }
+            }
+            return false;
         }
 
         // Approximate outer width of the composed dialog (button 170 + bg padding 2*4),
@@ -108,7 +143,7 @@ namespace PinMatrix
                 .CreateCompo("pinmatrix-mapbutton", dialogBounds)
                 .AddShadedDialogBG(bgBounds, false)
                 .BeginChildElements(bgBounds)
-                .AddSmallButton("Pin Matrix Editor (P)", () => { onClick?.Invoke(); return true; }, ElementBounds.Fixed(0, 0, 170, 30))
+                .AddSmallButton(config.MapButtonShortcutKey ? "Pin Matrix Editor (P)" : "Pin Matrix Editor", () => { onClick?.Invoke(); return true; }, ElementBounds.Fixed(0, 0, 170, 30))
                 .EndChildElements()
                 .Compose();
         }

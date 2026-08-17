@@ -2,5 +2,6 @@ bin/
 obj/
 dist/
 tools/compat-cache/
+tools/server-cache/
 *.user
 .vs/

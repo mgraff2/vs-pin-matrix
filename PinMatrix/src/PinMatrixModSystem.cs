@@ -58,7 +58,7 @@ namespace PinMatrix
 
             if (fullMapOpen)
             {
-                if (mapButton == null) mapButton = new HudPinMatrixMapButton(capi, OpenFromMapButton);
+                if (mapButton == null) mapButton = new HudPinMatrixMapButton(capi, config, OpenFromMapButton);
                 if (!mapButton.IsOpened())
                 {
                     mapButton.ResetOffset();    // each map-open starts from the preferred slot

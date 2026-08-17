@@ -35,6 +35,30 @@ Companion set (derived from this mod's real interaction surface — map dialogs,
 waypoint layer, HUD corners, chat — not copied from other projects): `waypointer`,
 `translocatorpaths`, `prospecttogether`, `boatautopilot`, `statushudcont`.
 
+## Game-version sweep — run it before every release
+
+```
+.\tools\version-sweep.ps1
+```
+
+`modinfo.json` declares `"game": "1.22.0"`, which is a promise to every player on every patch
+release — and the DLL is compiled against exactly one game version's references. This keeps
+the promise honest: it builds the zip **once**, then runs that same artifact through the whole
+compat matrix against a real dedicated server for **1.22.0 through 1.22.7**, each downloaded
+from `https://cdn.vintagestory.at/gamefiles/stable/vs_server_win-x64_<ver>.zip` and cached
+extracted in `tools/server-cache/` (gitignored, ~300MB per version). One artifact, N servers.
+`-Versions 1.22.0,1.22.7` checks just the endpoints while iterating; `-KeepGoing` reports every
+version instead of stopping at the first failure.
+
+When a new patch ships, append it to the `-Versions` default. The CDN 404s on versions that
+don't exist, which is how you find the current latest. A cache seeded by copying another VS
+mod repo's `tools/server-cache/` is fine — verify the per-version file count matches the source
+(~9630 files), since the `.extract-complete` stamp copies across and would otherwise vouch for
+a truncated copy.
+
+`SETUP` in the summary means "could not test this version", which is a different fact from
+`FAIL` ("the mod is broken on this version") — don't conflate them.
+
 ## Compat invariants (what the test pins, and why)
 
 - **Total server-side silence.** Pin Matrix must contribute *exactly one* line to
@@ -74,4 +98,5 @@ Stage `dist/pinmatrix_X.Y.Z.zip` into `%APPDATA%\VintagestoryData\Mods\` (remove
 pinmatrix zips) for local/friend testing first. Publish only on explicit go-ahead: dated
 CHANGELOG entry, README version refs, commit, tag `vX.Y.Z`, push,
 `gh release create vX.Y.Z dist\pinmatrix_X.Y.Z.zip --title "Pin Matrix X.Y.Z"`. ModDB
-upload is manual. **Run `.\tools\compat-test.ps1` before every release.**
+upload is manual. **Run `.\tools\compat-test.ps1` and `.\tools\version-sweep.ps1` before
+every release.**

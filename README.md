@@ -1,10 +1,11 @@
 # Pin Matrix — build & test notes
 
-Client-side bulk waypoint manager for Vintage Story 1.22.x. Spec: [pin-matrix-mod-spec.md](pin-matrix-mod-spec.md).
+Client-side bulk waypoint manager for Vintage Story 1.22.x (tested against 1.22.0 – 1.22.7).
+Spec: [pin-matrix-mod-spec.md](pin-matrix-mod-spec.md).
 
 ## Installed & ready
 
-`dist/pinmatrix_1.3.1.zip` is already copied to `%APPDATA%\VintagestoryData\Mods\`. Launch the game, load a world, open the map (**M**) and click the **Pin Matrix Editor** button (top right). Optionally bind a hotkey to "Pin Matrix (waypoint manager)" in Settings → Controls — it ships unbound.
+`dist/pinmatrix_1.3.2.zip` is already copied to `%APPDATA%\VintagestoryData\Mods\`. Launch the game, load a world, open the map (**M**) and click the **Pin Matrix Editor** button (top right). Optionally bind a hotkey to "Pin Matrix (waypoint manager)" in Settings → Controls — it ships unbound.
 
 ## Building
 
@@ -60,6 +61,16 @@ first use. `-SkipBuild` reuses the packaged zip; to check another game version, 
 server package (`https://cdn.vintagestory.at/gamefiles/stable/vs_server_win-x64_<ver>.zip`).
 Run it after any code change and before every release.
 
+`.\tools\version-sweep.ps1` — run at the end of every version, before the release commit.
+Builds the zip **once**, then runs that same artifact through the full compat matrix against
+real dedicated servers for **1.22.0 through 1.22.7**, downloaded from the official CDN and
+cached in `tools/server-cache/` (gitignored). One artifact, N servers — that is what backs the
+`"game": "1.22.0"` dependency declaration, since the DLL is compiled against one game
+version's references and claimed to work on all of them. `-Versions 1.22.0,1.22.7` checks just
+the endpoints while iterating; `-KeepGoing` reports every version rather than stopping at the
+first failure. When a new patch ships, append it to the `-Versions` default — the CDN 404s on
+versions that don't exist, which is how you find the current latest.
+
 Headless boots validate zip packaging, modinfo/dependency declarations, assembly loading,
 and the client-only gate — **not** client visuals or in-world interaction. Manual
 pre-release checklist for what the server can't see:
@@ -71,6 +82,10 @@ pre-release checklist for what the server can't see:
    the table must track waypoints those mods add, and nothing may corrupt indices (§4 test
    in "What to test first").
 4. Share round trip: "Send to chat" → clickable add-link appears and works.
+5. **Keyboard hand-off** (regression, 1.3.2): with Boat Autopilot active, click into its
+   route-name or filter box on the map screen and type a name containing `p` — the letter
+   must land in the box and Pin Matrix must not open. Then click the map itself and press
+   `P` — the editor must open. Repeat for any other mod that puts a text field on the map.
 
 ## Config (`VintagestoryData/ModConfig/pinmatrix.json`)
 
@@ -78,6 +93,8 @@ Created on first run: `RecycleBinMaxEntries` (500), `AutoBackupBeforeBulkOps` (f
 `BulkOpDelayMs` (30 — per-command throttle for bulk ops), `PinnedWarnThreshold` (20), `EnableMapRefresh` (false),
 `RowsPerPage` (14, clamped 5–18), `MapButtonRightMargin` / `MapButtonYOffset` (-1 = automatic placement; set both
 to unscaled px from the right/top edges to pin the map-screen button and disable overlap avoidance — use this if
-another map-HUD mod shares the corner and the automatic placement picks a spot you dislike).
+another map-HUD mod shares the corner and the automatic placement picks a spot you dislike),
+`MapButtonShortcutKey` (true — the map button's plain `P` shortcut; it already stands down while any text
+field has focus, so set it false only to free the key up entirely).
 
 Recycle bin + exports live in `VintagestoryData/ModData/pinmatrix/`.

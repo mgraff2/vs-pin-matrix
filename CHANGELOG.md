@@ -2,6 +2,17 @@
 
 All notable changes to Pin Matrix are documented here.
 
+## [1.3.2] — 2026-08-16
+
+### Fixed
+- **Typing into another mod's map-screen panel could open Pin Matrix** (reported against Boat Autopilot's route planner: naming a route "Port Nowhere" opened the editor on the `p`). The map button's plain-`P` shortcut now stands down whenever any text field anywhere in the GUI has keyboard focus. Root cause (decompiled 1.22.6 VintagestoryLib): mods attach their map panels to the vanilla world map dialog as *extra composers* — Boat Autopilot adds `worldmap-layer-boatroutes` with its route-name and filter inputs — and vanilla's protection for those inputs is `GuiElementEditableTextBase.OnKeyDown` marking every key handled while focused. That protection never reached us: `GuiManager` dispatches key-downs down `OpenedGuis` in *descending draw order*, and the Pin Matrix map button sits at 0.2 against the map dialog's 0.11, so it saw each keystroke first. Checking focus directly is the only guard that doesn't depend on that ordering. The rebindable **Settings > Controls** hotkey was never affected — vanilla runs hotkeys only after every dialog has declined the key.
+
+### Added
+- `MapButtonShortcutKey` config option (default `true`) to switch the map button's `P` shortcut off entirely. Not needed for the conflict above, which is fixed on its own; it is there for anyone who wants the key free regardless. With it off the button's label drops the `(P)` and the mod takes no part in keyboard dispatch at all.
+
+### Testing
+- **Game-version sweep** (`tools/version-sweep.ps1`, new here): the release zip is built once and that same artifact is run through the whole compat matrix — solo plus each companion mod plus all together — against real dedicated servers for every patch from **1.22.0 to 1.22.7**. The mod declares `"game": "1.22.0"` while being compiled against a single game version's references, so "one artifact, N servers" is the claim that needed a test rather than an assumption. 1.22.7 is the current latest and is now covered.
+
 ## [1.3.1] — 2026-08-08
 
 ### Fixed
@@ -104,6 +115,9 @@ Initial release for Vintage Story 1.22.x.
 - Map screen button ("Pin Matrix Editor") and bindable hotkey.
 - Fully client-side — no server-side install required.
 
+[1.3.2]: https://github.com/mgraff2/vs-pin-matrix/releases/tag/v1.3.2
+[1.3.1]: https://github.com/mgraff2/vs-pin-matrix/releases/tag/v1.3.1
+[1.3.0]: https://github.com/mgraff2/vs-pin-matrix/releases/tag/v1.3.0
 [1.2.1]: https://github.com/mgraff2/vs-pin-matrix/releases/tag/v1.2.1
 [1.2.0]: https://github.com/mgraff2/vs-pin-matrix/releases/tag/v1.2.0
 [1.1.4]: https://github.com/mgraff2/vs-pin-matrix/releases/tag/v1.1.4

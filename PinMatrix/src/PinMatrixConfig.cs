@@ -34,6 +34,14 @@ namespace PinMatrix
         public int MapButtonRightMargin { get; set; } = -1;
         public int MapButtonYOffset { get; set; } = -1;
 
+        /// <summary>
+        /// Whether plain "P" on the map screen opens the editor (the button's own shortcut; the
+        /// rebindable Settings &gt; Controls hotkey is unaffected). It is already suppressed while
+        /// any text field has focus, so it does not eat typing — set this to false only to free
+        /// the key up completely.
+        /// </summary>
+        public bool MapButtonShortcutKey { get; set; } = true;
+
         public void Clamp()
         {
             RecycleBinMaxEntries = Math.Max(10, RecycleBinMaxEntries);
