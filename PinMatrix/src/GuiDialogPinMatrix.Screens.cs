@@ -143,10 +143,99 @@ namespace PinMatrix
             ShowConfirm(new PendingBulk
             {
                 Title = $"Delete {doomed.Count} duplicate pins across {dupSets.Count} sets, keeping the original of each?",
-                Warning = "Pins are duplicates only when title, icon, color, pinned state and position all match.",
+                Warning = "Pins are duplicates only when title, icon, color, pinned state and position "
+                        + "all match, position being what the table shows. For pins that share a place "
+                        + "but nothing else, use \"Fix same-spot pins\" instead.",
                 ConfirmText = $"Delete {doomed.Count} duplicates",
                 Lines = doomed.Select(r => Disp(r.Wp) + "  ->  recycle bin").ToArray(),
                 Execute = () => ExecDelete(keys, "Duplicate cleanup", "Removed"),
+            });
+        }
+
+        /// <summary>
+        /// True when this looks like a marker our own trader auto-marking made: our icon and our
+        /// title prefix. <see cref="TraderMarkers.AlreadyMarked"/> matches on the icon alone, but
+        /// another mod's trader pin wears the same vanilla icon — so the prefix is what separates
+        /// "ours" from merely "trader-ish", and getting that wrong here would keep the other mod's
+        /// marker and bin ours.
+        /// </summary>
+        bool IsOurTraderMarker(PinRow r)
+        {
+            if (!string.Equals(WpCommands.SafeIcon(r.Wp.Icon), WpCommands.SafeIcon(config.TraderMarkerIcon),
+                               StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+            string prefix = config.TraderMarkerTitlePrefix ?? "";
+            return prefix.Length == 0
+                || (r.Wp.Title ?? "").StartsWith(prefix, StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>
+        /// Which copy of a same-spot set survives. Ours wins while trader auto-marking is on: it is
+        /// the one that would simply be re-created on the next scan if we binned it, and its colour
+        /// is the only one that carries the trade specialisation. Otherwise this falls back to the
+        /// ordinary rule — a copy still on the map beats a hidden one, and the earliest beats the rest.
+        /// </summary>
+        PinRow KeptSpotCopy(DupGroup g)
+        {
+            if (config.TraderMarkersEnabled)
+            {
+                var ours = g.Rows.FirstOrDefault(IsOurTraderMarker);
+                if (ours != null) return ours;
+            }
+            return KeptCopy(g);
+        }
+
+        /// <summary>
+        /// Cleanup for pins that share a location but nothing else — the trader carrying a
+        /// hand-placed pin, another tool's leftover marker and ours, all at one cart.
+        ///
+        /// The preview names the survivor of every set rather than only listing the condemned, which
+        /// the strict cleanup can get away with: there, the survivor is indistinguishable from what
+        /// goes, and here it is not.
+        /// </summary>
+        void BuildFixSameSpot()
+        {
+            if (batch.Busy) { notice = "A bulk operation is still running..."; UpdateMatrixDynamic(); return; }
+
+            var sets = GroupBySpot(allRows).Where(g => g.Rows.Count > 1).ToList();
+            if (sets.Count == 0)
+            {
+                notice = $"No pins share a spot — nothing sits within {config.SameSpotRadius:0.#} blocks of another pin.";
+                UpdateMatrixDynamic();
+                return;
+            }
+
+            var lines = new List<string>();
+            var doomed = new List<PinRow>();
+            foreach (var g in sets)
+            {
+                var keep = KeptSpotCopy(g);
+                bool ours = config.TraderMarkersEnabled && IsOurTraderMarker(keep);
+                lines.Add("KEEP  " + Disp(keep.Wp) + (ours ? "   (Pin Matrix trader marker)" : ""));
+                foreach (var r in g.Rows)
+                {
+                    if (r == keep) continue;
+                    doomed.Add(r);
+                    lines.Add("   x  " + Disp(r.Wp) + "  ->  recycle bin");
+                }
+            }
+
+            var keys = doomed.Select(r => r.Key).ToList();
+            ShowConfirm(new PendingBulk
+            {
+                Title = $"Delete {doomed.Count} pin(s) that share a spot with another, across {sets.Count} location(s)?",
+                Warning = "These are NOT identical pins — they share a location and nothing else, so their "
+                        + "names, icons and colours differ and only the kept one's survive. Read the list: "
+                        + "every KEEP line stays, every x line goes to the recycle bin. Pins naming "
+                        + "different trader specialisations are never grouped, so a trader camp stays intact."
+                        + (config.TraderMarkersEnabled
+                            ? " Pin Matrix's own trader markers are kept in preference to other pins."
+                            : ""),
+                ConfirmText = $"Delete {doomed.Count} pin(s)",
+                Lines = lines.ToArray(),
+                Execute = () => ExecDelete(keys, "Same-spot cleanup", "Removed"),
             });
         }
 

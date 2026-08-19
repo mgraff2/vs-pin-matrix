@@ -86,6 +86,8 @@ function Get-CompatMod([string]$modid, [string]$filePattern) {
 #   prospecttogether  - universal mod; its map panels are what PositionMapButton dodges
 #   boatautopilot     - live HUD readout; the reason the map button freezes after settling
 #   statushudcont     - HUD elements occupying screen corners
+#   tallybook         - another HUD-corner occupant; a named target of the window-layout
+#                       grid, whose HUD rects decide which snap cells get disabled
 Write-Host "Collecting companion mods..."
 $mods = [ordered]@{
     waypointer        = Get-CompatMod "waypointer"        "Waypointer-*.zip"
@@ -93,6 +95,7 @@ $mods = [ordered]@{
     prospecttogether  = Get-CompatMod "prospecttogether"  "ProspectTogether-*.zip"
     boatautopilot     = Get-CompatMod "boatautopilot"     "boatautopilot_*.zip"
     statushudcont     = Get-CompatMod "statushudcont"     "statushudcont_*.zip"
+    tallybook         = Get-CompatMod "tallybook"         "tallybook_*.zip"
 }
 $mods.GetEnumerator() | ForEach-Object { Write-Host "  $($_.Key): $(Split-Path $_.Value -Leaf)" }
 

@@ -1,72 +1,87 @@
 <!-- Paste into the "changelog" field of the ModDB release. Newest version first;
      keep older entries so the page reads as a history. -->
 
-<h3>1.4.0</h3>
-
+<p style="font-size: 1.1em;"><strong>1.5.0 &mdash; windows that stay where you put them, and markers that place themselves.</strong> Three additions, each optional and each off until you ask for it: a snap grid for the map screen's windows, automatic trader markers, and translocator paths for the hops you have actually made.</p>
+<table class="stdtable" style="width: 100%;">
+<tbody>
+<tr>
+<td style="width: 26%;"><strong>Map windows layout</strong></td>
+<td>Drag any window onto a grid and it stays there, across resolutions and GUI scales.</td>
+</tr>
+<tr>
+<td><strong>Trader markers</strong></td>
+<td>Walk past a trader, get a waypoint coloured by what they deal in.</td>
+</tr>
+<tr>
+<td><strong>Translocator paths</strong></td>
+<td>Both pads marked, a line between them, and nothing recorded for a pad you only walked past.</td>
+</tr>
+<tr>
+<td><strong>All three</strong></td>
+<td>Off by default. Switch them on from <strong>Map options...</strong> in the editor.</td>
+</tr>
+</tbody>
+</table>
+<h3>1.5.0</h3>
 <ul>
-<li><strong>Hide waypoints without deleting them.</strong> Requested by a player: <em>&quot;I don't
-need to know where every copper node or resin tree is all the time, only when I need copper or
-resin.&quot;</em> A hidden pin disappears from the world map and the minimap &mdash; marker, hover
-text and pinned screen-edge arrow with it &mdash; while staying exactly where it is, and staying in
-the table where you can find it, edit it and switch it back on.</li>
-<li><strong>A Vis column with a clickable eye</strong> on every row: open eye means it's on the map,
-struck-through means it isn't. Hidden rows are dimmed but still readable, and the column sorts like
-any other.</li>
-<li><strong>Hide and Show buttons</strong> work on your selection, so the whole job is one pass:
-filter to the copper icon, <strong>Select all filtered</strong>, <strong>Hide</strong>. It's instant
-in both directions &mdash; nothing is sent to the server, so there's no confirmation screen and no
-chat spam.</li>
-<li><strong>Show: all / visible / hidden</strong> filter button, working alongside search, icons,
-colour, pinned-only and distance. It starts on <em>all</em>, so hidden pins never quietly vanish
-from the table too, and a standing <em>N hidden</em> count sits by the page controls.</li>
-<li>The distance tools skip hidden pins: <strong>Next pin</strong> and the radius slider walk past
-them rather than landing on pins that aren't on your map. Switch to <em>Show: hidden</em> and they
-work on the hidden ones instead.</li>
-<li><strong>Nothing is ever deleted to hide it.</strong> Your waypoints stay on the server exactly as
-they were &mdash; uninstall the mod and every hidden pin comes straight back. Which pins are hidden
-is remembered per world on your own PC, so it doesn't follow you to another computer unless you copy
-<code>ModData/pinmatrix/hidden-&lt;world&gt;.json</code> across.</li>
-<li><strong>Fix duplicates</strong> now prefers to keep a copy that's still on the map, so tidying
-duplicates can't leave you with an invisible survivor.</li>
+<li><strong>Map windows layout &mdash; snap your map-screen windows to a grid.</strong> Switch it on in <strong>Map options</strong> and a <strong>Layout Zones (Z)</strong> button joins the map screen. Press it and the screen fills with a grid: drag any window by its title bar, release it on a zone, and its top-left corner snaps there. It stays put, and it comes back to the same place next time you open it.</li>
+<li><strong>You choose the grid.</strong> Anything from 1&times;1 to 20&times;20, split evenly across the screen &mdash; a coarse 3&times;2 for tidy halves and thirds, or a fine 15&times;10 lattice for precise placement on an ultrawide. Column and row numbers are drawn along the edges so you can read a coordinate straight off the screen.</li>
+<li><strong>It refuses to bury your HUDs.</strong> Cells sitting under your coordinate readout, hotbar, chat or any mod's HUD are drawn red and will not accept a drop, so a snapped window can never land on top of something you need to read. Untick <strong>Do not cover HUDs</strong> and the whole screen opens up &mdash; the grid itself does not move, so nothing already placed shifts. A threshold setting decides how much of a cell a HUD has to cover before it counts.</li>
+<li><strong>A tab strip, if you want one.</strong> Nominate any row and everything dropped on it spreads out evenly across the screen like tabs, re-spacing itself as things come and go. The column you drop on sets the order along the strip. The Pin Matrix buttons can join it, stack in a corner, or float separately.</li>
+<li><strong>Windows are moved, not resized</strong> &mdash; each is anchored by its top-left corner to the zone you drop it on and keeps its own size. The game has no notion of a resizable dialog, so stretching one would only leave its contents in the corner of a bigger frame.</li>
+<li><strong>Layouts survive your hardware.</strong> Zones are remembered as grid cells rather than pixel coordinates, so a new resolution, a different monitor or a nudge of the GUI-scale slider re-derives your layout instead of scattering windows off-screen. Settings are per machine, so a laptop and a desktop keep their own.</li>
+<li><strong>Reset layout</strong> on the options screen, and <code>.pinmatrix resetlayout</code> in chat. The chat version matters: if a window ever ends up somewhere you cannot click, a button inside that window is no help.</li>
+<li><strong>Auto-mark traders.</strong> Optional and off until you switch it on: walk past a trader and a waypoint appears on them, coloured by what they deal in &mdash; nine specialisations, each colour editable, with the vanilla trader-cart icon. They are ordinary waypoints, so everything the matrix already does works on them: sort, filter by colour, hide, bulk rename, recycle bin, export.</li>
+<li><strong>Translocator paths &mdash; but only the ones you have actually used.</strong> Optional and off until you switch it on. Step through a translocator and both pads get a waypoint, each named after the coordinates of the <em>other</em> end, with a line drawn between them on the map. Nothing is ever recorded for a pad you merely walked past.</li>
+<li><strong>Your paths follow your account, not your computer.</strong> A hop is described entirely by its two waypoints, and waypoints live on the server &mdash; so paths you record on one machine are simply there when you log in from another. No save file, no sync folder, no import step. Anyone you share a waypoint with can read where the pad goes even without this mod.</li>
+<li><strong>The hop you just took stands out.</strong> A freshly-used path draws in a bright high-contrast colour for 20 minutes (configurable, or off) and then settles back to the normal one, so you can see at a glance which way you came. <strong>Adopt TL waypoints...</strong> converts translocator markers left by another tool into Pin Matrix paths, previewed first.</li>
+<li><strong>New Map options screen</strong> gathers everything the mod can add to your map &mdash; trader markers, translocator paths, and the switch for the Layout Zones button &mdash; in three sections with the explanations on hover rather than filling the screen. <strong>Layout Options</strong> on the map screen configures the grid itself, and appears only while the zones are showing, since there is nothing to tune when you cannot see them.</li>
+<li><strong>Fix same-spot pins.</strong> A second cleanup, for pins that share a <em>place</em> and nothing else &mdash; one trader carrying a pin you placed by hand, a leftover from a previous auto-marker, and Pin Matrix's own, under three different names. <strong>Fix duplicates</strong> keeps its strict meaning; this one is separate because it can remove pins that genuinely differ, so it previews the survivor of every set as well as what goes. Pin Matrix's own trader marker is kept in preference while auto-marking is on, and a trader camp survives intact &mdash; traders stand together but never two of the same kind, so pins naming different specialisations are never collapsed into each other.</li>
+<li><strong>Fixed: Fix duplicates missed pins that looked identical.</strong> It compared positions far more finely than the table displays them, so two rows agreeing in every visible column could still refuse to group because their true positions differed by a fraction of a block. Positions are now compared exactly as shown.</li>
+<li><strong>No new keybinding.</strong> <strong>Z</strong> toggles the zones, but only on the map screen and only once window layout is switched on &mdash; like <strong>P</strong>, it is not a global bind and cannot collide with anything in a long mod list.</li>
 </ul>
-
-<h3>1.3.2</h3>
-
+<h3>Earlier releases</h3>
+<p><small>Click a heading to open it.</small></p>
+<div class="spoiler">
+<div class="spoiler-toggle" style="font-size: 15px;">1.4.0 <span style="font-weight: normal; color: var(--color-text-weak);">&mdash; hide waypoints without deleting them</span></div>
+<div class="spoiler-text">
 <ul>
-<li><strong>Fixed: typing into another mod's map-screen panel could open Pin Matrix.</strong>
-Reported against Boat Autopilot &mdash; naming a route in its route planner opened the editor
-on the <strong>p</strong>. The map button's <strong>P</strong> shortcut now stands aside whenever
-any text box has keyboard focus, so it applies to chat, waypoint names, and any other mod that
-puts an input on the map screen. Pressing <strong>P</strong> with the map itself focused still
-opens the editor, and the rebindable Settings &rarr; Controls hotkey was never affected.</li>
-<li><strong>New setting <code>MapButtonShortcutKey</code></strong> (default on) turns the
-<strong>P</strong> shortcut off entirely, for anyone who would rather keep the key free. The fix
-above works without it.</li>
-<li>Now verified against dedicated servers for every release from <strong>1.22.0 to 1.22.7</strong>,
-solo and alongside each supported companion mod.</li>
+<li><strong>Hide waypoints without deleting them.</strong> Requested by a player: <em>&quot;I don't need to know where every copper node or resin tree is all the time, only when I need copper or resin.&quot;</em> A hidden pin disappears from the world map and the minimap &mdash; marker, hover text and pinned screen-edge arrow with it &mdash; while staying exactly where it is, and staying in the table where you can find it, edit it and switch it back on.</li>
+<li><strong>A Vis column with a clickable eye</strong> on every row: open eye means it is on the map, struck-through means it is not. Hidden rows are dimmed but still readable, and the column sorts like any other.</li>
+<li><strong>Hide and Show buttons</strong> work on your selection, so the whole job is one pass: filter to the copper icon, <strong>Select all filtered</strong>, <strong>Hide</strong>. It is instant in both directions &mdash; nothing is sent to the server, so there is no confirmation screen and no chat spam.</li>
+<li><strong>Show: all / visible / hidden</strong> filter button, working alongside search, icons, colour, pinned-only and distance. It starts on <em>all</em>, so hidden pins never quietly vanish from the table too, and a standing <em>N hidden</em> count sits by the page controls.</li>
+<li>The distance tools skip hidden pins: <strong>Next pin</strong> and the radius slider walk past them rather than landing on pins that are not on your map. Switch to <em>Show: hidden</em> and they work on the hidden ones instead.</li>
+<li><strong>Nothing is ever deleted to hide it.</strong> Your waypoints stay on the server exactly as they were &mdash; uninstall the mod and every hidden pin comes straight back. Which pins are hidden is remembered per world on your own PC, so it does not follow you to another computer unless you copy <code>ModData/pinmatrix/hidden-&lt;world&gt;.json</code> across.</li>
+<li><strong>Fix duplicates</strong> now prefers to keep a copy that is still on the map, so tidying duplicates cannot leave you with an invisible survivor.</li>
 </ul>
-
-<h3>1.3.1</h3>
-
+</div>
+</div>
+<div class="spoiler">
+<div class="spoiler-toggle" style="font-size: 15px;">1.3.2 <span style="font-weight: normal; color: var(--color-text-weak);">&mdash; typing in another mod's map panel no longer opens the editor</span></div>
+<div class="spoiler-text">
 <ul>
-<li>Fixed the &quot;Group duplicates&quot; label wrapping onto a second line and overrunning the
-table header. <strong>Refresh</strong> moved down to the utilities row next to the recycle bin to
-make room.</li>
+<li><strong>Fixed: typing into another mod's map-screen panel could open Pin Matrix.</strong> Reported against Boat Autopilot &mdash; naming a route in its route planner opened the editor on the <strong>p</strong>. The map button's <strong>P</strong> shortcut now stands aside whenever any text box has keyboard focus, so it applies to chat, waypoint names, and any other mod that puts an input on the map screen. Pressing <strong>P</strong> with the map itself focused still opens the editor, and the rebindable Settings &rarr; Controls hotkey was never affected.</li>
+<li><strong>New setting <code>MapButtonShortcutKey</code></strong> (default on) turns the <strong>P</strong> shortcut off entirely, for anyone who would rather keep the key free. The fix above works without it.</li>
+<li>Now verified against dedicated servers for every release from <strong>1.22.0 to 1.22.7</strong>, solo and alongside each supported companion mod.</li>
 </ul>
-
-<h3>1.3.0</h3>
-
+</div>
+</div>
+<div class="spoiler">
+<div class="spoiler-toggle" style="font-size: 15px;">1.3.1 <span style="font-weight: normal; color: var(--color-text-weak);">&mdash; a label that overran the table header</span></div>
+<div class="spoiler-text">
 <ul>
-<li><strong>Duplicate grouping and one-click cleanup.</strong> A <strong>Group duplicates</strong>
-switch folds pins that are identical in every column into a single row marked
-<em>&times; N copies</em>. <strong>Fix duplicates</strong> is labelled with the live count and
-removes every extra copy through the usual confirmation preview, always keeping the original.
-It scans your whole list, not just the filtered view, so a filter can't leave copies behind.</li>
-<li><strong>The colour filter shows the colours.</strong> Painted swatches with hex and a live
-count, sorted round the colour wheel, listing only colours your pins actually use. Counts respond
-to your other filters.</li>
-<li>Fixed an empty table on servers where you hadn't opened the map yet &mdash; the mod now asks
-for your waypoints itself instead of waiting for the map to do it.</li>
-<li>Fixed a crash on opening the editor caused by waypoint icons whose art hadn't loaded yet.
-An icon that genuinely can't be drawn now falls back to its name and stays usable.</li>
+<li>Fixed the &quot;Group duplicates&quot; label wrapping onto a second line and overrunning the table header. <strong>Refresh</strong> moved down to the utilities row next to the recycle bin to make room.</li>
 </ul>
+</div>
+</div>
+<div class="spoiler">
+<div class="spoiler-toggle" style="font-size: 15px;">1.3.0 <span style="font-weight: normal; color: var(--color-text-weak);">&mdash; duplicate cleanup and a colour filter that shows colours</span></div>
+<div class="spoiler-text">
+<ul>
+<li><strong>Duplicate grouping and one-click cleanup.</strong> A <strong>Group duplicates</strong> switch folds pins that are identical in every column into a single row marked <em>&times; N copies</em>. <strong>Fix duplicates</strong> is labelled with the live count and removes every extra copy through the usual confirmation preview, always keeping the original. It scans your whole list, not just the filtered view, so a filter cannot leave copies behind.</li>
+<li><strong>The colour filter shows the colours.</strong> Painted swatches with hex and a live count, sorted round the colour wheel, listing only colours your pins actually use. Counts respond to your other filters.</li>
+<li>Fixed an empty table on servers where you had not opened the map yet &mdash; the mod now asks for your waypoints itself instead of waiting for the map to do it.</li>
+<li>Fixed a crash on opening the editor caused by waypoint icons whose art had not loaded yet. An icon that genuinely cannot be drawn now falls back to its name and stays usable.</li>
+</ul>
+</div>
+</div>

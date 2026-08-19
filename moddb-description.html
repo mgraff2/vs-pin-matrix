@@ -1,96 +1,227 @@
-<p><strong>A spreadsheet for your waypoints.</strong> Pin Matrix puts every waypoint you own
-into one sortable, filterable table so you can find, tidy, retint, hide, and share them in bulk
-&mdash; instead of clicking pins one at a time on the map.</p>
-
-<p>Fully <strong>client-side</strong>: install it locally and it works on any server, vanilla or modded.
-Nothing to install server-side.</p>
-
-<h2>Getting started</h2>
-
-<p>Open the world map (<strong>M</strong>) and click the <strong>Pin Matrix Editor</strong> button in the
-top-right corner, or just press <strong>P</strong> while the map is open. Prefer your own key? Bind one to
-&quot;Pin Matrix (waypoint manager)&quot; under Settings &rarr; Controls &mdash; it ships unbound.</p>
-
-<p>The <strong>P</strong> shortcut steps aside whenever you are typing: if any text box has focus &mdash;
-chat, a waypoint name, or another mod's panel on the map screen &mdash; the letter goes into the box
-and Pin Matrix stays shut.</p>
-
-<h2>The table</h2>
-
+<p style="font-size: 1.1em;"><strong>Pin Matrix is a spreadsheet for your waypoints &mdash; every pin you own in one sortable, filterable table, edited a hundred at a time instead of one at a time on the map.</strong> Find the pin you meant to keep, retint a whole class of them in one pass, switch off the clutter without deleting anything, and hand a location to a friend in a click. Fully client-side: install it on your client and it works on any server, modded or not.</p>
+<table class="stdtable" style="width: 100%;">
+<tbody>
+<tr>
+<td style="width: 26%;"><strong>Where it installs</strong></td>
+<td>Your client only. Nothing goes on the server, and nobody else needs it.</td>
+</tr>
+<tr>
+<td><strong>Game version</strong></td>
+<td>Vintage Story 1.22.x &mdash; tested against every patch release, 1.22.0 through 1.22.7.</td>
+</tr>
+<tr>
+<td><strong>Other mods</strong></td>
+<td>Tested alongside Waypointer, Translocator Paths, ProspectTogether, Boat Autopilot, Status HUD Continued and Tallybook &mdash; each on its own and all together, every release.</td>
+</tr>
+<tr>
+<td><strong>What it changes</strong></td>
+<td>Your own waypoints, and only when you say so. Every bulk operation shows a before/after preview first, deletes go to a recycle bin, and the last one can be undone.</td>
+</tr>
+<tr>
+<td><strong>Opening it</strong></td>
+<td><strong>P</strong> with the world map open, or the <strong>Pin Matrix Editor</strong> button on the map. A rebindable hotkey is there too &mdash; it ships unbound.</td>
+</tr>
+</tbody>
+</table>
+<h3>Six filters, six questions</h3>
+<table class="stdtable" style="width: 100%;">
+<thead>
+<tr>
+<th style="width: 22%;">Filter</th>
+<th>The question it answers</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Search</strong></td>
+<td>What did I call that place, roughly?</td>
+</tr>
+<tr>
+<td><strong>Icon strip</strong></td>
+<td>Where is every copper node I have marked?</td>
+</tr>
+<tr>
+<td><strong>Colour</strong></td>
+<td>Which pins did I tint for this project?</td>
+</tr>
+<tr>
+<td><strong>Pinned only</strong></td>
+<td>What am I carrying a screen-edge arrow for?</td>
+</tr>
+<tr>
+<td><strong>Show: all / visible / hidden</strong></td>
+<td>What have I switched off, and is it still there?</td>
+</tr>
+<tr>
+<td><strong>Within N blocks</strong></td>
+<td>What is near me right now?</td>
+</tr>
+</tbody>
+</table>
+<p><small>They all compose &mdash; search inside one icon inside one colour inside 500 blocks &mdash; and every count you see respects the filters above it.</small></p>
+<h3>What each part does</h3>
+<p><small>Click a heading to open it.</small></p>
+<div class="spoiler">
+<div class="spoiler-toggle" style="font-size: 15px;">The table <span style="font-weight: normal; color: var(--color-text-weak);">&mdash; sort it, filter it, and walk outward from where you stand</span></div>
+<div class="spoiler-text">
+<p><strong>Every column sorts.</strong> Name, icon, colour, X, Y, Z, distance, pinned, and whether the pin is currently on your map &mdash; click a header to sort, click again to reverse.</p>
+<p><strong>The colour filter shows the colours.</strong> A dropdown of painted swatches with hex codes and live counts, sorted round the colour wheel with the greys first, listing only the colours your pins actually use. The counts follow your other filters, so you can see at a glance how many red pins are within 200 blocks.</p>
+<p><strong>The distance slider is an expanding search.</strong> Drag it out from <em>off</em> and your pins appear in growing rings around you &mdash; 10 blocks, 25, 50, and on up to 10,000. Or press <strong>Next pin</strong> and it widens the radius by exactly enough to reveal the next-nearest pin, one click at a time, until it tells you there is nothing further out. Both respect every other filter, so "the next copper node I haven't visited" is one button.</p>
+<p>Coordinates read the way your HUD reads them &mdash; X and Z relative to spawn, Y absolute &mdash; so what is on screen is what you would type into chat.</p>
+</div>
+</div>
+<div class="spoiler">
+<div class="spoiler-toggle" style="font-size: 15px;">Hide the clutter <span style="font-weight: normal; color: var(--color-text-weak);">&mdash; switch pins off without deleting a thing</span></div>
+<div class="spoiler-text">
+<p>You do not need to see every copper node and resin tree all the time &mdash; only when you are going after copper or resin. Click the eye in a row's <strong>Vis</strong> column and that pin leaves the world map and the minimap, marker, hover text and screen-edge arrow with it, while staying exactly where it is: still on the server, still in the table, still searchable and editable, ready to come back.</p>
+<p><strong>In bulk, the way you do everything else here:</strong> filter to the copper icon, <strong>Select all filtered</strong>, <strong>Hide</strong>. It is instant in both directions &mdash; nothing is sent to the server, so there is no confirmation screen and no chat spam either way.</p>
+<p>A <strong>Show: all / visible / hidden</strong> button filters the table by what is switched on, and a standing <em>N hidden</em> count sits by the page controls so you can never forget you have pins parked. <strong>Next pin</strong> and the distance slider walk past hidden pins rather than landing on things that are not on your map &mdash; switch to <em>Show: hidden</em> and they work on the hidden set instead.</p>
+<p><strong>Nothing is deleted to hide it.</strong> Your waypoints are untouched on the server: uninstall Pin Matrix and every hidden pin comes straight back.</p>
+</div>
+</div>
+<div class="spoiler">
+<div class="spoiler-toggle" style="font-size: 15px;">Bulk editing <span style="font-weight: normal; color: var(--color-text-weak);">&mdash; select, preview, confirm, undo</span></div>
+<div class="spoiler-text">
+<p>Select rows by clicking, shift-click for a range, or take the lot with <strong>Select all filtered</strong>. Then <strong>delete</strong>, <strong>set colour</strong>, <strong>set icon</strong>, <strong>pin</strong>, <strong>unpin</strong> or <strong>rename</strong> every one of them at once.</p>
+<p><strong>Every bulk operation is previewed before it runs</strong> &mdash; a before/after list of exactly which pins change and how, and a confirmation to get past. Renames preview the new titles; recolours show the old swatch beside the new one.</p>
+<p>Deleted pins go to a <strong>recycle bin</strong> you can restore from, and <strong>Undo last bulk</strong> reverses the last operation whatever it was. If you would like a belt as well as braces, the config can write a full export before every mutating bulk operation.</p>
+</div>
+</div>
+<div class="spoiler">
+<div class="spoiler-toggle" style="font-size: 15px;">Duplicates <span style="font-weight: normal; color: var(--color-text-weak);">&mdash; fold them up, then clear them out</span></div>
+<div class="spoiler-text">
+<p>Flip <strong>Group duplicates</strong> and pins identical in every column collapse into a single row marked <em>&times; N copies</em>. Click the row to unfold it, tick it to select the whole group at once.</p>
+<p><strong>Fix duplicates</strong> is labelled with the live count and removes every extra copy through the usual preview and confirmation, always keeping one &mdash; and preferring to keep a copy that is still showing on your map, so tidying up can never leave you with an invisible survivor. It scans your whole list rather than the filtered view, so a filter cannot hide copies from the cleanup.</p>
+<p><strong>Fix same-spot pins</strong> is the other half of the job: pins that share a <em>place</em> and nothing else. One trader ends up carrying a pin you placed by hand, a leftover from whatever auto-marker you used before, and Pin Matrix's own &mdash; three different names, one cart. This finds those sets and offers them up, naming the survivor of each rather than only the condemned, because here the survivor is not interchangeable with what goes.</p>
+<p>It is deliberately careful, since it can delete pins that genuinely differ. <strong>Pin Matrix's own trader marker is kept in preference</strong> while auto-marking is on. <strong>A trader camp survives intact</strong> &mdash; traders do stand together, but never two of the same kind, so pins naming different specialisations are never collapsed into each other however close they are. And grouping never chains: everything in a set is close to the pin that opened it, not merely to its nearest neighbour, so a line of pins cannot swallow a village.</p>
+</div>
+</div>
+<div class="spoiler">
+<div class="spoiler-toggle" style="font-size: 15px;">One pin at a time <span style="font-weight: normal; color: var(--color-text-weak);">&mdash; edit, move, find, share</span></div>
+<div class="spoiler-text">
+<p><strong>Edit</strong> opens the familiar vanilla waypoint dialog. <strong>Move</strong> re-creates the pin at new coordinates. <strong>Map</strong> &mdash; or a double-click on the row &mdash; centres the world map on it.</p>
+<p><strong>Share</strong> sends a pin to chat or copies its command to the clipboard for Discord. Friends who also run Pin Matrix see a clickable <em>add this waypoint</em> link in chat, with the game's own confirmation prompt; everyone else still gets the location as plain readable text, and the copied command works for anyone you paste it to.</p>
+<p><strong>New pin</strong> creates one where you stand, or at coordinates you type.</p>
+</div>
+</div>
+<div class="spoiler">
+<div class="spoiler-toggle" style="font-size: 15px;">Trader markers <span style="font-weight: normal; color: var(--color-text-weak);">&mdash; optional: walk past a trader, get a waypoint</span></div>
+<div class="spoiler-text">
+<p>Off until you switch it on, on the <strong>Map options</strong> screen. Once on, walking past a trader drops a waypoint on them, coloured by what they deal in &mdash; nine specialisations, each colour editable with a live swatch and a per-row reset, using the vanilla trader-cart icon. The palette matches Waypointer's, so the same kind of trader reads as the same colour whichever mod put the marker there.</p>
+<p><strong>What it produces is ordinary waypoints</strong>, which is the whole point: they sort, filter, recolour, hide, bulk-rename, land in the recycle bin and export exactly like a pin you placed by hand. No parallel marker system, and switching the feature off later leaves nothing behind that the matrix cannot manage.</p>
+<p>Two distances you control: how close you have to get before a trader is marked, and how near an existing trader pin has to be to count as "already marked" &mdash; kept deliberately loose, because traders wander around their cart.</p>
+</div>
+</div>
+<div class="spoiler">
+<div class="spoiler-toggle" style="font-size: 15px;">Translocator paths <span style="font-weight: normal; color: var(--color-text-weak);">&mdash; optional: only the hops you have actually made</span></div>
+<div class="spoiler-text">
+<p>Off until you switch it on. Step through a translocator and both pads get a waypoint, each named after the coordinates of the <em>other</em> end, with a line drawn between them on the world map. Nothing is ever recorded for a pad you merely walked past &mdash; that is the point of it.</p>
+<p><strong>Your paths follow your account, not your computer.</strong> A hop is described entirely by its two waypoints, and waypoints live on the server &mdash; so a network you map on one machine is simply there when you log in from another. No save file, no sync folder, no import step. Anyone you share one with can read where the pad goes even without this mod.</p>
+<p><strong>The hop you just took stands out</strong>, drawn in a bright high-contrast colour for twenty minutes (configurable, or off) before settling back to the normal one, so you can see at a glance which way you came. And if another tool already left you a pile of translocator markers, <strong>Adopt TL waypoints...</strong> converts them into Pin Matrix paths &mdash; previewed first, and only titles, icons and colours change.</p>
+</div>
+</div>
+<div class="spoiler">
+<div class="spoiler-toggle" style="font-size: 15px;">Window layout <span style="font-weight: normal; color: var(--color-text-weak);">&mdash; optional: snap the map screen's windows to a grid</span></div>
+<div class="spoiler-text">
+<p>Off until you switch it on, on the <strong>Map options</strong> screen &mdash; a button for a feature you never use is clutter on every map open. Once on, a <strong>Layout Zones (Z)</strong> button joins the map screen: press it and the screen fills with a grid. Drag any window by its title bar, drop it on a zone, and it snaps there &mdash; and comes back to the same place next time it opens.</p>
+<p><strong>You choose the grid.</strong> Anything from 1&times;1 to 20&times;20, split evenly across the screen: coarse for tidy halves and thirds, fine for precise placement on an ultrawide. Column and row numbers run along the edges so you can read a coordinate straight off the screen.</p>
+<p><strong>It refuses to bury your HUDs.</strong> Cells sitting under your coordinate readout, hotbar, chat or any mod's HUD are drawn red and will not take a drop, so a snapped window can never land on something you need to read. Untick <strong>Do not cover HUDs</strong> and the whole screen opens up &mdash; the grid itself does not move, so nothing you have already placed shifts.</p>
+<p><strong>Nominate a row as a tab strip</strong> and everything dropped on it spreads evenly across the full width like tabs, re-spacing as things come and go. The Pin Matrix buttons can join the strip, stack in a corner, or float separately &mdash; your choice.</p>
+<p><strong>Layouts survive your hardware.</strong> Zones are remembered as grid cells rather than pixel coordinates, so a new resolution, a different monitor or a nudge of the GUI-scale slider re-derives your layout instead of scattering windows off-screen. <strong>Reset layout</strong> puts everything back, and it is a chat command as well as a button &mdash; because a button inside a window that ended up somewhere unclickable is no help at all.</p>
+</div>
+</div>
+<div class="spoiler">
+<div class="spoiler-toggle" style="font-size: 15px;">Import and export <span style="font-weight: normal; color: var(--color-text-weak);">&mdash; a file you can keep, move or share</span></div>
+<div class="spoiler-text">
+<p>Export everything, or just your selection, to a file &mdash; then import it on another world, another character or another computer. Re-imports skip anything you already have, so running one twice is safe.</p>
+</div>
+</div>
+<h3>Keys</h3>
+<table class="stdtable" style="width: 100%;">
+<thead>
+<tr>
+<th style="width: 22%;">Key</th>
+<th>Does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>P</strong></td>
+<td>Open the editor, with the world map open</td>
+</tr>
+<tr>
+<td><strong>Z</strong></td>
+<td>Show or hide the layout zones, with the world map open &mdash; once window layout is switched on</td>
+</tr>
+<tr>
+<td>Double-click</td>
+<td>Centre the world map on that row's pin</td>
+</tr>
+<tr>
+<td><em>unbound</em></td>
+<td>&quot;Pin Matrix (waypoint manager)&quot; under Settings &rarr; Controls, if you would rather have your own key</td>
+</tr>
+</tbody>
+</table>
+<p><small><strong>P</strong> and <strong>Z</strong> are not global binds &mdash; they exist only while the Pin Matrix buttons are on the map screen, so they cannot collide with anything in a long mod list, and they step aside the moment any text box has focus: chat, a waypoint name, or another mod's panel on the map. Either can be switched off entirely in the config.</small></p>
+<h3>Commands</h3>
+<p>Client commands, so they start with a dot.</p>
+<table class="stdtable" style="width: 100%;">
+<thead>
+<tr>
+<th style="width: 34%;">Everyday</th>
+<th>Does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>.pinmatrix zones</code></td>
+<td>Show or hide the layout grid over the map</td>
+</tr>
+<tr>
+<td><code>.pinmatrix resetlayout</code></td>
+<td>Forget every remembered window zone and put the windows back</td>
+</tr>
+<tr>
+<td><code>.pinmatrix tlpaths</code></td>
+<td>List your translocator paths &mdash; each marker and where its label points</td>
+</tr>
+</tbody>
+</table>
+<table class="stdtable" style="width: 100%;">
+<thead>
+<tr>
+<th style="width: 34%;">If something looks wrong</th>
+<th>Prints</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>.pinmatrix dialogs</code></td>
+<td>Every open window with everything the grid decides on &mdash; start here when a window will not snap</td>
+</tr>
+<tr>
+<td><code>.pinmatrix rescanhuds</code></td>
+<td>Re-measures which HUDs are on screen and which cells they block</td>
+</tr>
+<tr>
+<td><code>.pinmatrix whyblocked &lt;col&gt; &lt;row&gt;</code></td>
+<td>Explains why one grid cell is refusing a drop</td>
+</tr>
+</tbody>
+</table>
+<h3>What Pin Matrix will never do</h3>
 <ul>
-<li><strong>Sort</strong> by name, icon, colour, X/Y/Z, distance, pinned state, or whether the pin is
-showing on the map &mdash; click any column header.</li>
-<li><strong>Filter</strong> with text search, an icon strip, a pinned-only toggle, and a colour dropdown
-that shows painted swatches with live counts &mdash; only colours your pins actually use.</li>
-<li><strong>Distance filter</strong> with a slider: drag it out from &quot;off&quot; and your pins appear in growing
-rings around you. The <strong>Next pin</strong> button widens the radius just enough to reveal the
-next-nearest pin &mdash; a one-button expanding search.</li>
-<li>Coordinates display the same way your HUD does (X/Z relative to spawn), so what you see is
-what you'd say in chat.</li>
+<li><strong>Change anything without showing you first.</strong> Every bulk operation previews exactly what it will do and waits for a confirmation. Deletes are binned, the last operation is undoable, and an optional automatic backup can run before each one.</li>
+<li><strong>Delete a waypoint to hide it.</strong> Hiding is a display filter and nothing more &mdash; the pin stays on the server, untouched. Uninstall the mod and everything hidden comes straight back.</li>
+<li><strong>Touch waypoints that are not yours.</strong> Pins shared with you by group members are left out on purpose: the game only allows managing your own, and pretending otherwise would corrupt the list it edits by position.</li>
+<li><strong>Move one of your HUDs.</strong> The layout grid measures them and steers around them. It never repositions something that puts itself where it wants to be.</li>
+<li><strong>Claim a global key.</strong> <strong>P</strong> and <strong>Z</strong> live on the map screen only and stand down while you are typing. The one rebindable hotkey ships unbound, so nothing is taken from you on install.</li>
 </ul>
-
-<h2>Hide the clutter</h2>
-
-<p>You don't need to see every copper node and resin tree all the time &mdash; only when you're
-going after copper or resin. Switch a pin off with the eye in its <strong>Vis</strong> column and it
-disappears from the world map and the minimap, while staying right where it is: still on the server,
-still in the table, still searchable and editable, ready to switch back on.</p>
-
+<h3>Good to know</h3>
 <ul>
-<li>Do it in bulk the same way you do everything else: filter to the copper icon,
-<strong>Select all filtered</strong>, <strong>Hide</strong>. Instant, both directions &mdash; nothing
-is sent to the server, so there's no confirmation screen and no chat spam.</li>
-<li>A <strong>Show: all / visible / hidden</strong> button filters the table by what's switched on,
-working alongside every other filter, and a standing <em>N hidden</em> count keeps you honest.</li>
-<li><strong>Next pin</strong> and the distance slider skip hidden pins, so an expanding search doesn't
-keep landing on pins that aren't on your map.</li>
-<li><strong>Nothing is deleted to hide it.</strong> Your waypoints are untouched &mdash; uninstall
-Pin Matrix and every hidden pin comes straight back.</li>
-</ul>
-
-<h2>Bulk editing</h2>
-
-<ul>
-<li>Select rows by clicking, shift-click for ranges, or grab everything with <strong>Select all filtered</strong>.</li>
-<li>Bulk <strong>delete, set colour, set icon, pin/unpin, and rename</strong> &mdash; every operation shows a
-before/after preview and asks for confirmation first.</li>
-<li><strong>Duplicate cleanup:</strong> a &quot;Group duplicates&quot; switch folds identical pins into single rows
-marked <em>&times; N copies</em>, and <strong>Fix duplicates</strong> removes every copy in one click,
-always keeping the original.</li>
-<li>Deleted pins go to a <strong>recycle bin</strong> with restore, and the last bulk operation can be undone.
-Optional automatic backups before bulk operations are available in the config.</li>
-</ul>
-
-<h2>Per-pin actions</h2>
-
-<ul>
-<li><strong>Edit</strong> opens the familiar vanilla waypoint dialog.</li>
-<li><strong>Move</strong> re-creates a pin at new coordinates.</li>
-<li><strong>Map</strong> (or double-clicking a row) centres the world map on the pin.</li>
-<li><strong>Share</strong> sends a pin to chat or copies its command to the clipboard for Discord.
-Friends who also run Pin Matrix get a clickable &quot;add this waypoint&quot; link in chat;
-everyone else still sees the plain text and can use the copied command.</li>
-</ul>
-
-<h2>Import / export</h2>
-
-<p>Export your waypoints to a file and import them elsewhere &mdash; re-imports skip anything
-you already have, so it's safe to run twice.</p>
-
-<h2>Good to know</h2>
-
-<ul>
-<li>Because the mod is client-side, bulk operations run through chat commands, so the server
-echoes one &quot;Ok, waypoint added&quot; style line per pin. Harmless, just chatty.</li>
-<li>Waypoints shared with you by group members (owned by other players) are left out on purpose
-&mdash; the game only allows managing your own.</li>
-<li>Which pins you have hidden is remembered per world on your own PC (the game gives a client-side
-mod nowhere else to keep it), so it doesn't follow you to another computer unless you copy
-<code>ModData/pinmatrix/hidden-&lt;world&gt;.json</code> across.</li>
-<li>Settings live in <code>ModConfig/pinmatrix.json</code>: rows per page, bulk-operation throttle,
-recycle bin size, map-button position override, the <strong>P</strong> shortcut on/off, and more.</li>
-<li>Tested for compatibility alongside Waypointer, Translocator Paths, ProspectTogether,
-Boat Autopilot, and Status HUD Continued &mdash; each on its own and all together.</li>
-<li>Every release is run against real dedicated servers for <strong>1.22.0 through 1.22.7</strong>
-before it ships.</li>
+<li>Because the mod is client-side, bulk operations go through the game's own chat commands &mdash; so the server echoes one &quot;Ok, waypoint added&quot; line per pin. Harmless, just chatty on a big job.</li>
+<li>Which pins you have hidden is remembered per world on your own PC (a client-side mod has nowhere else to keep it), at <code>ModData/pinmatrix/hidden-&lt;world&gt;.json</code>. Copy that across if you want it on a second computer.</li>
+<li>Window positions are written to the game's own <code>clientsettings.json</code>, the same place its movable dialogs already store theirs &mdash; so a laptop and a desktop keep independent layouts, and your windows stay put even without this mod.</li>
+<li>Settings live in <code>ModConfig/pinmatrix.json</code>: rows per page, the bulk-operation throttle, recycle bin size, the auto-backup switch, the <strong>P</strong> and <strong>Z</strong> shortcuts, marker colours and distances, and the layout grid.</li>
 </ul>

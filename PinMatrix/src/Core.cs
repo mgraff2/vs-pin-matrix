@@ -62,6 +62,20 @@ namespace PinMatrix
 
         // ---- sharing ----
 
+        /// <summary>
+        /// Escapes text bound for capi.ShowChatMessage.
+        ///
+        /// Chat is rendered as VTML, so a bare '&lt;' opens a tag. A message containing "&lt;-&gt;" produced
+        /// "Found closing tag &lt;font&gt; ... but &lt;-&gt; should be closed first" and corrupted the chat
+        /// renderer for every later message, which presents to the player as the mod having broken.
+        /// Anything we build from coordinates, titles or user input goes through here.
+        /// </summary>
+        public static string ChatSafe(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return text;
+            return text.Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;");
+        }
+
         /// <summary>Marker prefix that lets receiving Pin Matrix clients recognize a share line in chat.</summary>
         public const string ShareMarker = "[Pin Matrix]";
 

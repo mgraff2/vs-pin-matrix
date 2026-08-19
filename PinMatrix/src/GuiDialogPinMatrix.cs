@@ -14,7 +14,7 @@ namespace PinMatrix
 {
     public enum PmScreen
     {
-        Matrix, Confirm, SetColor, SetIcon, Rename, NewPin, Bin, ImportExport, Share
+        Matrix, Confirm, SetColor, SetIcon, Rename, NewPin, Bin, ImportExport, Share, Layout, MapOptions
     }
 
     public class PendingBulk
@@ -74,6 +74,14 @@ namespace PinMatrix
         readonly BatchEngine batch;
         readonly RecycleBin bin;
         readonly WaypointVisibility visibility;
+
+        /// <summary>Window-layout system; set by the mod system after construction.</summary>
+        public LayoutManager Layout;
+        /// <summary>Trader auto-marker service; set by the mod system after construction.</summary>
+        public TraderMarkers Traders;
+        /// <summary>Translocator path service; set by the mod system after construction.</summary>
+        public TranslocatorPaths TlPaths;
+        public PinMatrixModSystem ModSystem;
 
         PmScreen screen = PmScreen.Matrix;
         string notice = "";
@@ -357,18 +365,26 @@ namespace PinMatrix
         /// them duplicates. Distance is excluded because it is derived from the position, and the
         /// Actions column holds no data.
         /// </summary>
-        static string DupSignature(Waypoint wp)
+        /// <remarks>
+        /// Position is compared at exactly the precision the table <em>shows</em> — whole blocks,
+        /// spawn-relative X/Z, straight through <see cref="FmtCoord"/>. It used to compare to two
+        /// decimals, which quietly broke the promise in the summary above: two rows reading
+        /// identically in every visible column still would not group, because their positions
+        /// differed by a fraction of a block no player could see. Comparing more finely than the
+        /// player can look is how "these are obviously the same pin" became "no duplicates found".
+        /// </remarks>
+        string DupSignature(Waypoint wp)
             => string.Join("|",
                 WpCommands.SafeTitle(wp.Title),
                 WpCommands.SafeIcon(wp.Icon),
                 WpCommands.ColorHex(wp.Color),
                 wp.Pinned ? "1" : "0",
-                wp.Position.X.ToString("0.##", CultureInfo.InvariantCulture),
-                wp.Position.Y.ToString("0.##", CultureInfo.InvariantCulture),
-                wp.Position.Z.ToString("0.##", CultureInfo.InvariantCulture));
+                FmtCoord(svc.RelX(wp.Position.X)),
+                FmtCoord(wp.Position.Y),
+                FmtCoord(svc.RelZ(wp.Position.Z)));
 
         /// <summary>Groups <paramref name="rows"/> by duplicate signature, keeping first-seen order.</summary>
-        static List<DupGroup> GroupByDuplicate(IEnumerable<PinRow> rows)
+        List<DupGroup> GroupByDuplicate(IEnumerable<PinRow> rows)
         {
             var bySig = new Dictionary<string, DupGroup>();
             var ordered = new List<DupGroup>();
@@ -420,6 +436,67 @@ namespace PinMatrix
 
         /// <summary>Extra copies across the whole waypoint list — what "Fix duplicates" would remove.</summary>
         int DuplicateCount() => GroupByDuplicate(allRows).Sum(g => g.Rows.Count - 1);
+
+        /// <summary>
+        /// Groups pins that sit in the same place, whatever they are called — the case the strict
+        /// rule above cannot serve, where one trader carries a hand-placed pin, another tool's
+        /// marker and ours, all pointing at the same cart under three different names.
+        ///
+        /// Two deliberate restraints, because unlike duplicate cleanup this can delete pins that
+        /// genuinely differ:
+        ///
+        /// - **Not transitive.** Every member is within tolerance of the row that opened the
+        ///   cluster, never merely of its nearest neighbour. Chaining would let a line of pins a few
+        ///   blocks apart collapse into one "spot" spanning half a village.
+        /// - **Never two named specialisations.** Traders really do stand together in camps, but
+        ///   never two of the same kind — so a pin naming a different specialisation from the seed
+        ///   is a different trader and starts its own cluster however close it is. Pins whose
+        ///   specialisation cannot be read stay eligible, which is what lets the unnamed strays
+        ///   join the trader they point at.
+        /// </summary>
+        List<DupGroup> GroupBySpot(IEnumerable<PinRow> rows)
+        {
+            double r = Math.Max(0, config.SameSpotRadius);
+            var list = rows as List<PinRow> ?? rows.ToList();
+            var taken = new bool[list.Count];
+            var groups = new List<DupGroup>();
+
+            for (int i = 0; i < list.Count; i++)
+            {
+                if (taken[i]) continue;
+                taken[i] = true;
+
+                var g = new DupGroup { Sig = "spot:" + list[i].Key };
+                g.Rows.Add(list[i]);
+
+                var seed = list[i].Wp.Position;
+                string seedRole = SpotRole(list[i]);
+
+                for (int j = i + 1; j < list.Count; j++)
+                {
+                    if (taken[j]) continue;
+
+                    string role = SpotRole(list[j]);
+                    if (seedRole != null && role != null && seedRole != role) continue;
+
+                    var p = list[j].Wp.Position;
+                    if (Math.Abs(p.X - seed.X) > r) continue;
+                    if (Math.Abs(p.Y - seed.Y) > r) continue;
+                    if (Math.Abs(p.Z - seed.Z) > r) continue;
+
+                    taken[j] = true;
+                    g.Rows.Add(list[j]);
+                }
+                groups.Add(g);
+            }
+            return groups;
+        }
+
+        /// <summary>The trade specialisation this pin's title names, or null if it names none.</summary>
+        string SpotRole(PinRow r) =>
+            TraderMarkers.RoleFromTitle(r.Wp.Title, config.TraderMarkerTitlePrefix);
+
+        int SameSpotCount() => GroupBySpot(allRows).Sum(g => g.Rows.Count - 1);
 
         IEnumerable<PinRow> Sorted<TKey>(IEnumerable<PinRow> q, System.Func<PinRow, TKey> key, IComparer<TKey> cmp)
             => sortAsc ? q.OrderBy(key, cmp) : q.OrderByDescending(key, cmp);
@@ -476,6 +553,8 @@ namespace PinMatrix
                 case PmScreen.Bin: ComposeBin(composer); break;
                 case PmScreen.ImportExport: ComposeImportExport(composer); break;
                 case PmScreen.Share: ComposeShare(composer); break;
+                case PmScreen.Layout: ComposeLayout(composer); break;
+                case PmScreen.MapOptions: ComposeMapOptions(composer); break;
             }
 
             var replaced = SingleComposer;
@@ -490,6 +569,8 @@ namespace PinMatrix
             if (screen == PmScreen.NewPin) RestoreNewPinState();
             if (screen == PmScreen.Rename) RestoreRenameState();
             if (screen == PmScreen.ImportExport) RestoreImportExportState();
+            if (screen == PmScreen.Layout) RestoreLayoutState();
+            if (screen == PmScreen.MapOptions) RestoreMapOptionsState();
         }
 
         string TitleFor()
@@ -504,6 +585,8 @@ namespace PinMatrix
                 case PmScreen.Bin: return "Pin Matrix — Recycle bin";
                 case PmScreen.ImportExport: return "Pin Matrix — Export / Import";
                 case PmScreen.Share: return "Pin Matrix — Share pin";
+                case PmScreen.Layout: return "Pin Matrix — Map windows layout";
+                case PmScreen.MapOptions: return "Pin Matrix — Map options";
                 default: return "Pin Matrix — Waypoint manager";
             }
         }
@@ -511,6 +594,20 @@ namespace PinMatrix
         void OnTitleBarClose()
         {
             if (screen == PmScreen.Matrix) TryClose();
+            else GoBack();
+        }
+
+        /// <summary>
+        /// Where "back" leads from the screen we are on.
+        ///
+        /// Every screen is opened from the matrix and returns to it — except Map windows layout,
+        /// whose only entry point is the "Layout Options" button on the map screen. Returning that
+        /// one to the matrix drops the player into a window they never came from and buries the map
+        /// they were arranging behind it.
+        /// </summary>
+        void GoBack()
+        {
+            if (screen == PmScreen.Layout) OnBackToMap();
             else BackToMatrix();
         }
 
@@ -633,6 +730,17 @@ namespace PinMatrix
             {
                 c.AddSmallButton("Redraw map", () => { ExecuteMapRedraw(); return true; }, EB(660, y, 86, 28));
             }
+            // The layout *grid* is deliberately NOT configured from here — it can only be judged
+            // while you are looking at it, so that lives behind the "Layout Options" button on the
+            // map screen. What Map options carries is the switch that makes the map-screen Layout
+            // Zones button exist at all, which has to be reachable without that button.
+            y += 34;
+            c.AddSmallButton("Map options...", () => { screen = PmScreen.MapOptions; Recompose(); return true; }, EB(4, y, 160, 28));
+            // Separate from "Fix duplicates" on purpose: that one only ever removes pins you cannot
+            // tell apart, this one removes pins that differ in everything but where they are.
+            int spots = SameSpotCount();
+            c.AddSmallButton(spots > 0 ? $"Fix same-spot pins ({spots})..." : "Fix same-spot pins...",
+                () => { BuildFixSameSpot(); return true; }, EB(170, y, 250, 28));
             c.AddSmallButton("Back to map", () => { OnBackToMap(); return true; }, EB(DW - 146, y, 142, 28));
         }
 
