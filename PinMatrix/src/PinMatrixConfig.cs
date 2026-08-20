@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace PinMatrix
 {
@@ -166,19 +167,12 @@ namespace PinMatrix
 
         /// <summary>
         /// How the Pin Matrix map-screen buttons are packaged while layout management is on:
-        ///   "row"      - one window stretched across LayoutButtonRow, buttons spread evenly
+        ///   "row"      - one window stretched across the whole row it is snapped to, buttons spread evenly
         ///   "stacked"  - one window, buttons in a column, snapped to LayoutButtonCol/CellRow
         ///   "parallel" - one window, buttons in a row, snapped to LayoutButtonCol/CellRow
         ///   "float"    - one window per button, each placed independently
         /// </summary>
         public string LayoutButtonMode { get; set; } = "stacked";
-
-        /// <summary>
-        /// The row used as a tab strip in "row" mode. Anything snapped onto it is spread evenly
-        /// across the full width instead of sitting in the single cell it was dropped on — the
-        /// column it was dropped on only decides its order along the strip. -1 = none.
-        /// </summary>
-        public int LayoutButtonRow { get; set; } = -1;
 
         /// <summary>
         /// Starting cell for "stacked" and "parallel" modes; the buttons run from its top-left corner.
@@ -195,6 +189,37 @@ namespace PinMatrix
         /// stranding windows at coordinates that meant something on other hardware.
         /// </summary>
         public List<ZoneAssignment> LayoutAssignments { get; set; } = new List<ZoneAssignment>();
+
+        /// <summary>
+        /// Saved filters that can be switched on and off from the map screen. Global across worlds
+        /// — a set is a question ("pins whose name has 'resin'"), and that question means the same
+        /// thing everywhere; which pins are currently switched off is per savegame and lives in
+        /// <see cref="WaypointVisibility"/>'s own file.
+        ///
+        /// They surface as the pin-set panel down the right of the world map — a column of on/off
+        /// rows in the spirit of the map's own Terrain / Waypoints toggles — and on the editor's
+        /// Pin sets screen. The panel appears only when at least one set exists, so a player who
+        /// never makes one never sees it.
+        /// </summary>
+        public List<PinSet> PinSets { get; set; } = new List<PinSet>();
+
+        /// <summary>
+        /// Whether the map's pin-set panel is open, or shut down to its 16px pull.
+        ///
+        /// Shut by default, and that is the considered choice rather than caution. The world map is
+        /// CenterMiddle at 1200x800, so the free space either side is only whatever the screen has
+        /// left over — at a higher GUI scale or in a window there is very little, and a permanently
+        /// open 150-320px column spends all of it on a list most players read twice a session. The
+        /// pull is one click and the answer is remembered, so anyone who wants it open pays that
+        /// click once per install rather than once per map open.
+        /// </summary>
+        public bool PinSetPanelExpanded { get; set; } = false;
+
+        /// <summary>
+        /// Ceiling on saved sets. Not a technical limit — the panel pages, so it would cope — but a
+        /// list this long has stopped being a set of filters and become a second waypoint list.
+        /// </summary>
+        public const int MaxPinSets = 24;
 
         public void Clamp()
         {
@@ -231,11 +256,32 @@ namespace PinMatrix
             {
                 LayoutButtonMode = "stacked";
             }
-            if (LayoutButtonRow >= LayoutRows || LayoutButtonRow < 0) LayoutButtonRow = -1;
-            if (LayoutButtonMode == "row" && LayoutButtonRow < 0) LayoutButtonRow = Math.Max(0, LayoutRows - 1);
             LayoutButtonCol = Math.Min(LayoutCols - 1, Math.Max(0, LayoutButtonCol));
             LayoutButtonCellRow = Math.Min(LayoutRows - 1, Math.Max(0, LayoutButtonCellRow));
             if (LayoutAssignments == null) LayoutAssignments = new List<ZoneAssignment>();
+
+            if (PinSets == null) PinSets = new List<PinSet>();
+            // A set with no name has nothing to put on a button, and one with no id cannot own a
+            // window or be edited; both mean a hand-edited or half-written config, so drop them
+            // rather than carrying a set nothing can address.
+            PinSets.RemoveAll(s => s == null || string.IsNullOrWhiteSpace(s.Name));
+            var seenSetIds = new HashSet<string>();
+            foreach (var set in PinSets)
+            {
+                if (set.Icons == null) set.Icons = new List<string>();
+                if (set.Colors == null) set.Colors = new List<string>();
+                if (set.Search == null) set.Search = "";
+                set.Name = set.Name.Trim();
+                if (set.Name.Length > 40) set.Name = set.Name.Substring(0, 40);
+                // Duplicate or missing ids would give two sets the same button window and the same
+                // zone assignment, so the later one is re-minted rather than dropped.
+                if (string.IsNullOrEmpty(set.Id) || !seenSetIds.Add(set.Id))
+                {
+                    set.Id = PinSet.NewId(PinSets.Where(x => !string.IsNullOrEmpty(x.Id)));
+                    seenSetIds.Add(set.Id);
+                }
+            }
+            if (PinSets.Count > MaxPinSets) PinSets.RemoveRange(MaxPinSets, PinSets.Count - MaxPinSets);
 
             LayoutAssignments.RemoveAll(a => a == null || string.IsNullOrEmpty(a.Dialog));
 

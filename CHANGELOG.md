@@ -2,6 +2,45 @@
 
 All notable changes to Pin Matrix are documented here.
 
+## [1.6.0] — 2026-08-20
+
+### Added
+- **Pin sets — save a filter, get a map filter.** Filter the table to whatever you like, press **Save as set...** on the filter bar, name it, and it becomes a row in the new **pin-set panel** down the right of the world map — a column of on/off filters in the spirit of the map's own Terrain / Waypoints / Prospecting toggles. Click a row to hide everything it matches; click again to bring it all back.
+  - **The set stores the question, not the answer.** The filter is re-evaluated the moment you click, so resin you marked this morning is covered by a set you made last week. Criteria stay editable forever from the new **Pin sets** screen (rename, re-filter, reorder, delete), and the order there is the order the rows appear in.
+  - **Lit or greyed, at a glance.** Each row shows the set's icon in colour while any of its pins are on the map, and greyed out once they are all hidden, with the name, the counts and what a click will do in its tooltip. Give a set no icon and it gets a plain colour chip instead, so the column still lines up. A set filtering on exactly one colour is drawn in that colour; with none or several it stays white, since no single colour would be honest.
+  - **Any visible means "hide".** A row only offers to *show* once every pin it matches is switched off, so one click always lands on a clean state and the panel can never disagree with the map.
+  - **The panel sizes itself to your longest set name** — measured, not estimated, so it is never wider than the names it holds and never truncates one it could have shown. It is clamped at both ends: never narrower than a readable minimum, and never wider than 320px *or* a fifth of the screen, whichever is tighter — so it stays modest on a small or windowed client too. Past that a name ellipsizes rather than dragging the column across the map, with the full text in the row's tooltip.
+  - **The panel pages rather than clipping.** It sizes itself to the room between where it sits and the bottom of the screen and pages when there are more sets than fit. (This is why the sets are not entries in the map's own tab strip: that strip is fixed at 545px with 30px tabs, and tab nineteen is not scrolled but silently clipped — with vanilla's own four plus other map mods, sets would start disappearing with nothing on screen to say why. It also draws plain text, so no icons and no counts.)
+  - **The panel is a drawer, shut by default.** It parks against the world map's right edge as a 16px pull; click it to slide the list open, click again to put it away, and the answer is remembered. The map is centred at 1200x800, so the free space beside it is only whatever the screen has left over — at a higher GUI scale or in a window there is very little, and a permanently open column spends all of it. The pull re-colours while any set is hiding pins, so a filter you left on can never be invisible.
+  - The panel follows the map's edge when GUI scale or window size moves it. It is the map's own furniture, so it is deliberately not a snap-grid window: it has no drag handle in layout mode and cannot be dropped into a zone.
+  - **The map's own layer tab now reads "Translocator paths"** instead of the raw key `maplayer-pinmatrixtl`. The world map labels every map-layer tab with `Lang.Get("maplayer-" + LayerGroupCode)` and shows the key itself when it cannot resolve one, and this mod shipped no lang file. It now ships exactly one, holding exactly that key.
+  - Sets are saved in `pinmatrix.json`, so they are global across worlds; which pins are currently hidden stays per savegame, as before.
+
+### Changed
+- **The editor is much less busy.** Three changes, all aimed at the same thing:
+  - **The icon filter is a dropdown.** The 24-per-row grid of every waypoint icon in the game is gone; icons now sit beside colours as a multi-select dropdown listing only the icons your pins actually use, each entry showing the glyph, the code and a live count. That is two full rows of the screen recovered, and the counts are new — the grid never had them.
+  - **A Tools screen.** Export/Import, Recycle bin, Fix duplicates, Fix same-spot pins, Refresh and Redraw map have moved behind one **Tools...** button, and the remaining action rows are regrouped: mutations on one row, the things that change nothing on the server (Hide, Show, Pin sets, New pin) on the next. The counts that used to live on the Fix buttons are still on the main screen as a status line beside **Tools...** — a fact about your data is not something to hide in a cabinet.
+  - **Explanations moved into tooltips** on the new screens, following the rule the Window layout and Map options screens already set: prose beside a control buries the two or three settings anyone actually changes.
+- **The tab row is chosen by dragging, not by typing a number.** In tab-row button mode, the row your Pin Matrix bar is snapped to *is* the tab row — drop the bar on the row you want and it stretches right across it, grid-aligned, with its buttons spread evenly. The **Tab row** number box on the Map windows layout screen is gone, and `LayoutButtonRow` has been removed from the config. The row belongs to the bar: anything else dropped there is refused, because it would land underneath it (see Fixed).
+
+### Fixed
+- **A window can no longer be lost underneath the Pin Matrix tab row.** In tab-row mode the button
+  bar is stretched across the whole of its row and draws above the world map, so another mod's
+  window dropped on that row ended up beneath a full-width strip that takes the mouse first —
+  visible, but impossible to click or drag back out without resetting the whole layout. That row
+  now refuses other windows outright, saying so in chat, and shows red under the pointer while you
+  drag one over it. Moving the bar onto a row that already holds a snapped window releases that
+  window back to where its own mod put it rather than parking it underneath.
+- **`.pinmatrix unsnap` releases one window instead of all of them.** Run it with no name to list
+  what is snapped, or with any part of a name (`.pinmatrix unsnap prospect`) to release just that
+  one — `.pinmatrix resetlayout` was previously the only way out, and it clears everything.
+
+
+## [1.5.1] — 2026-08-19
+
+### Fixed
+- **Hidden waypoints no longer flash back onto the map while you drag it.** Every time the map view crosses a 32-block chunk boundary — which a slow drag does every few pixels, and zooming does too — the game asks the server for your waypoints again and rebuilds every map marker from the reply, hidden ones included. Pin Matrix re-hid them from a 20ms timer, which is a race against the *render frame* rather than the clock: at 60-144fps one to three frames could already have been drawn from the rebuilt list, so the switched-off pins blinked in and out for the whole drag. The pins are now re-hidden once per frame, immediately before the map is drawn, so no frame can ever show them. Reported by a player on ModDB.
+
 ## [1.5.0] — 2026-08-19
 
 ### Added

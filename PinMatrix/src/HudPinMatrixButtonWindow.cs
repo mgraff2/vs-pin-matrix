@@ -18,7 +18,7 @@ namespace PinMatrix
     /// window type:
     ///
     ///   Fixed cell — one window, buttons in a column, snapped to a grid cell
-    ///   Tab row    — one window, buttons in a row, spread along the dock row
+    ///   Tab row    — one window, buttons in a row, stretched across the row it is dropped on
     ///   Floating   — one window per button, each placed wherever you like
     ///
     /// Every one of them is an ordinary window with its own name, so dragging, snapping, saved

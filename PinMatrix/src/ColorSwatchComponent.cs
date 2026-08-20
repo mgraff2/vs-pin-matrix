@@ -52,7 +52,7 @@ namespace PinMatrix
         }
 
         /// <summary>"#rrggbb" (as produced by WpCommands.ColorHex) to Cairo RGB; white on anything unparseable.</summary>
-        static double[] ParseHex(string hex)
+        public static double[] ParseHex(string hex)
         {
             hex = (hex ?? "").TrimStart('#');
             if (hex.Length != 6 || !int.TryParse(hex, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out int v))

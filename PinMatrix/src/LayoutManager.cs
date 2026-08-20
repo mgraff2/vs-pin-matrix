@@ -340,11 +340,63 @@ namespace PinMatrix
             return null;
         }
 
-        /// <summary>Snaps a window into a zone and remembers it. Refuses zones a HUD is sitting in.</summary>
+        /// <summary>
+        /// Why this window may not go in this zone, or null if it may.
+        ///
+        /// ONE RULE, TWO READERS. Snap enforces it and the overlay paints it, so a cell can never
+        /// look droppable and then refuse the drop — or worse, take it and strand the window.
+        /// </summary>
+        public string WhyCannotSnap(string dialogName, int col, int row, int colSpan = 1, int rowSpan = 1)
+        {
+            if (string.IsNullOrEmpty(dialogName)) return "That window has no name to remember it by.";
+
+            // The tab row is the button bar's, and the bar is stretched across the whole of it. A
+            // window dropped there lands UNDER a full-screen-width strip of our buttons, which sit
+            // at DrawOrder 0.97 against the map dialog's 0.11 and therefore take the mouse first —
+            // so it is not merely overlapped, it is unclickable, and the only way back out is a
+            // layout reset. Refusing the drop is the fix; the row is already tinted as special.
+            if (IsButtonRow(row) && dialogName != ButtonsDialogName)
+            {
+                return "That row is the Pin Matrix tab row — the button bar is stretched across it, "
+                     + "so a window dropped there would end up underneath it. Drop it on another row, "
+                     + "or move the bar to a different row first.";
+            }
+
+            if (config.LayoutAvoidHuds && IsBlocked(col, row, colSpan, rowSpan))
+            {
+                return "That zone is disabled because a HUD is there. Untick \"Do not cover HUDs\" "
+                     + "on the Map windows layout screen to use it anyway.";
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// Windows released by the last <see cref="Snap"/> because the button bar landed on top of
+        /// them. Read straight after the call: the drop is the only moment a player can be told.
+        /// </summary>
+        public readonly List<string> LastSnapEvicted = new List<string>();
+
+        /// <summary>Snaps a window into a zone and remembers it. Refuses per <see cref="WhyCannotSnap"/>.</summary>
         public bool Snap(string dialogName, int col, int row, int colSpan = 1, int rowSpan = 1)
         {
-            if (string.IsNullOrEmpty(dialogName)) return false;
-            if (config.LayoutAvoidHuds && IsBlocked(col, row, colSpan, rowSpan)) return false;
+            LastSnapEvicted.Clear();
+            if (WhyCannotSnap(dialogName, col, row, colSpan, rowSpan) != null) return false;
+
+            // The bar taking a row makes that row the tab row, and the tab row holds nothing else —
+            // WhyCannotSnap refuses new drops onto it, but the bar can also arrive on a row that was
+            // already occupied. Those windows are released rather than left underneath a full-width
+            // strip that takes the mouse before they do; being back where their own mod put them is
+            // recoverable, being invisible and unclickable is not.
+            if (dialogName == ButtonsDialogName && config.LayoutButtonMode == "row")
+            {
+                foreach (var other in config.LayoutAssignments.ToArray())
+                {
+                    if (other.Dialog == dialogName || other.Row != row) continue;
+                    LastSnapEvicted.Add(other.Dialog);
+                }
+                foreach (var name in LastSnapEvicted) Unsnap(name);
+            }
 
             var a = Find(dialogName);
             if (a == null)
@@ -354,9 +406,10 @@ namespace PinMatrix
             }
             a.Col = col; a.Row = row; a.ColSpan = colSpan; a.RowSpan = rowSpan;
 
-            bool ok = ApplyAssignment(a, force: true, ZoneFor(a));
-            // The strip re-spaces itself when something joins or leaves it.
-            if (IsButtonRow(row)) ApplyAll(force: true);
+            // Windows we place ourselves (the button bar) only need the assignment recorded — the
+            // mod system re-places them from it on the next tick, and letting both write the same
+            // window is how it ends up twitching between two nearly-equal answers.
+            bool ok = SelfPlaced.Contains(dialogName) || ApplyAssignment(a, force: true, ZoneFor(a));
             save?.Invoke();
             return ok;
         }
@@ -388,6 +441,55 @@ namespace PinMatrix
             appliedTo.Remove(dialogName);
         }
 
+        /// <summary>
+        /// Un-snaps whatever one window a player's query names, for the chat command.
+        ///
+        /// Matched case-insensitively against the remembered zones, exact first and then substring,
+        /// because the names worth typing are composer DialogNames like "ProspectTogether Settings"
+        /// — someone else's, with spaces and capitals nobody should have to reproduce. Ambiguity is
+        /// reported rather than guessed at: silently un-snapping the wrong window is a worse outcome
+        /// than being asked to be more specific.
+        /// </summary>
+        public string UnsnapMatching(string query)
+        {
+            if (config.LayoutAssignments.Count == 0) return "No windows are snapped.";
+
+            if (string.IsNullOrWhiteSpace(query))
+            {
+                var sb = new StringBuilder("Snapped windows — .pinmatrix unsnap <name> to release one:");
+                foreach (var a in config.LayoutAssignments) sb.Append("\n  ").Append(a.Dialog);
+                return sb.ToString();
+            }
+
+            query = query.Trim();
+            var hits = new List<string>();
+            foreach (var a in config.LayoutAssignments)
+            {
+                if (string.Equals(a.Dialog, query, StringComparison.OrdinalIgnoreCase))
+                {
+                    hits.Clear();
+                    hits.Add(a.Dialog);
+                    break;
+                }
+                if (a.Dialog != null && a.Dialog.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    hits.Add(a.Dialog);
+                }
+            }
+
+            if (hits.Count == 0) return $"No snapped window matches \"{query}\". Run .pinmatrix unsnap with no name to list them.";
+            if (hits.Count > 1)
+            {
+                var sb = new StringBuilder($"\"{query}\" matches {hits.Count} snapped windows — be more specific:");
+                foreach (var h in hits) sb.Append("\n  ").Append(h);
+                return sb.ToString();
+            }
+
+            return Unsnap(hits[0])
+                ? $"Released \"{hits[0]}\" — it is back where its own mod put it."
+                : $"Could not release \"{hits[0]}\".";
+        }
+
         /// <summary>Clears every remembered zone. The recovery path when something has gone wrong.</summary>
         public int ResetAll()
         {
@@ -414,83 +516,63 @@ namespace PinMatrix
             }
         }
 
-        // ------------------------------------------------------------------ the dock row
+        // ------------------------------------------------------------------ the tab row
+
+        /// <summary>The main button window's name — the one whose row nominates the tab strip.</summary>
+        public const string ButtonsDialogName = "pinmatrix-buttons";
 
         /// <summary>
-        /// Is this row the nominated tab strip?
+        /// Which row is the tab strip: <b>the row the Pin Matrix button bar is snapped to</b>.
         ///
-        /// Only in tab-row mode. The row number is remembered in every mode so switching back does
-        /// not lose it, but a row that is not currently being used as a strip is just an ordinary
-        /// row of cells — it must not be tinted as special, and dropping a window on it must snap
-        /// normally rather than being spread along a strip that is not in use.
+        /// It used to be a number typed on the Layout screen. Dragging says it better — the bar is
+        /// visible, the grid is on screen, and "put the strip here" is one drop rather than counting
+        /// rows and typing the index. Until the bar has been dragged anywhere it defaults to the
+        /// bottom row, which is where a tab strip almost always wants to be.
+        ///
+        /// -1 outside tab-row mode: a row that is not currently acting as a strip is an ordinary row
+        /// of cells, and must neither be tinted as special nor spread the windows dropped on it.
         /// </summary>
-        public bool IsButtonRow(int row) =>
-            config.LayoutButtonMode == "row" && config.LayoutButtonRow >= 0 && row == config.LayoutButtonRow;
-
-        /// <summary>True when the dock row is actually in use, for the overlay to tint it.</summary>
-        public bool ButtonRowActive => config.LayoutButtonMode == "row" && config.LayoutButtonRow >= 0;
-
-        /// <summary>
-        /// Everything currently assigned to the dock row, in the order it will be laid out. The
-        /// column something was dropped on is only an ordering key here, not a position — that is
-        /// what makes the strip stay evenly spaced as items are added and removed. Ties break on
-        /// name so the order cannot wobble between frames.
-        /// </summary>
-        List<ZoneAssignment> DockedItems()
+        public int ButtonRowIndex
         {
-            var docked = new List<ZoneAssignment>();
-            if (!ButtonRowActive) return docked;
-
-            foreach (var a in config.LayoutAssignments)
+            get
             {
-                if (a.Row == config.LayoutButtonRow) docked.Add(a);
+                if (config.LayoutButtonMode != "row") return -1;
+                var a = Find(ButtonsDialogName);
+                int row = a != null ? a.Row : config.LayoutRows - 1;
+                return Math.Min(config.LayoutRows - 1, Math.Max(0, row));
             }
-            docked.Sort((x, y) =>
-            {
-                int byCol = x.Col.CompareTo(y.Col);
-                return byCol != 0 ? byCol : string.CompareOrdinal(x.Dialog, y.Dialog);
-            });
-            return docked;
         }
 
-        /// <summary>The slot an item gets on the dock row: the row split into n equal parts.</summary>
-        URect DockSlot(int index, int count)
+        public bool IsButtonRow(int row) => ButtonRowIndex >= 0 && row == ButtonRowIndex;
+
+        /// <summary>True when the tab row is actually in use, for the overlay to tint it.</summary>
+        public bool ButtonRowActive => ButtonRowIndex >= 0;
+
+        /// <summary>
+        /// The strip the button bar occupies: the whole width of its row, inset by the zone padding.
+        ///
+        /// A tab row is a bar, and a bar spans its row — that is the whole difference between this
+        /// mode and Parallel, which is the same window of side-by-side buttons snapped to one cell.
+        /// An intermediate design divided the row into equal slots shared with anything else dropped
+        /// on it: the bar shrank the moment another window joined the row, and the slot edges fell at
+        /// fractions of the screen rather than on grid lines, so the bar stopped lining up with the
+        /// lattice the player had just dropped it onto. The row belongs to the bar. Anything else
+        /// dropped on that row snaps to the cell it was dropped on, exactly as on any other row.
+        /// </summary>
+        public URect ButtonRowRect()
         {
             double pad = config.LayoutZonePadding;
-            double slotW = Grid.ScreenW / Math.Max(1, count);
-            return new URect(
-                index * slotW + pad,
-                config.LayoutButtonRow * Grid.CellH + pad,
-                slotW - 2 * pad,
-                Grid.CellH - 2 * pad);
-        }
-
-        /// <summary>
-        /// The slot on the button row reserved for our own map-screen button stack. It always takes
-        /// the first slot, and counts as one strip item alongside anything else docked there.
-        /// </summary>
-        public URect OwnButtonDock()
-        {
-            if (!ButtonRowActive) return Grid.Cell(0, 0);
-            return DockSlot(0, DockedItems().Count + 1);
+            return new URect(pad,
+                             Math.Max(0, ButtonRowIndex) * Grid.CellH + pad,
+                             Math.Max(1, Grid.ScreenW - 2 * pad),
+                             Math.Max(1, Grid.CellH - 2 * pad));
         }
 
         /// <summary>The cell the button stack anchors to in "cell" mode.</summary>
         public URect OwnButtonCell() => Grid.Cell(config.LayoutButtonCol, config.LayoutButtonCellRow);
 
-        /// <summary>Where an assignment actually goes — a dock slot if it is on the strip, else its cell.</summary>
-        public URect ZoneFor(ZoneAssignment a)
-        {
-            if (IsButtonRow(a.Row))
-            {
-                var docked = DockedItems();
-                int idx = docked.FindIndex(d => d.Dialog == a.Dialog);
-                // Slot 0 belongs to our own button stack (OwnButtonDock), so everything else starts
-                // at 1 and the strip is sized for one more item than the assignment list holds.
-                if (idx >= 0) return DockSlot(idx + 1, docked.Count + 1);
-            }
-            return Grid.Cell(a.Col, a.Row, a.ColSpan, a.RowSpan);
-        }
+        /// <summary>Where an assignment actually goes.</summary>
+        public URect ZoneFor(ZoneAssignment a) => Grid.Cell(a.Col, a.Row, a.ColSpan, a.RowSpan);
 
         /// <summary>
         /// The rectangle a window would actually occupy if dropped on this cell right now, used by
@@ -506,21 +588,22 @@ namespace PinMatrix
             float scale = RuntimeEnv.GUIScale;
             if (scale <= 0) scale = 1;
 
-            URect zone;
-            if (IsButtonRow(row))
-            {
-                var docked = DockedItems();
-                int idx = docked.FindIndex(d => d.Dialog == dialogName);
-                // A newcomer joins the strip, so the slots get one narrower.
-                zone = idx >= 0 ? DockSlot(idx + 1, docked.Count + 1) : DockSlot(docked.Count + 1, docked.Count + 2);
-            }
-            else
-            {
-                zone = Grid.Cell(col, row);
-            }
-
             double w = compo.Bounds.OuterWidth / scale;
             double h = compo.Bounds.OuterHeight / scale;
+
+            // The button bar in tab-row mode does not land at a corner and keep its width — it
+            // stretches over the whole row it is dropped on, so the preview has to say so. Reading
+            // the row from the drop rather than from ButtonRowIndex is what makes the outline follow
+            // the pointer up and down the grid before the drop has been made.
+            if (dialogName == ButtonsDialogName && config.LayoutButtonMode == "row")
+            {
+                double pad = config.LayoutZonePadding;
+                landing = new URect(pad, row * Grid.CellH + pad,
+                                    Math.Max(1, Grid.ScreenW - 2 * pad), h);
+                return true;
+            }
+
+            URect zone = Grid.Cell(col, row);
             double x = Clamp(zone.X, 0, Math.Max(0, Grid.ScreenW - w));
             double y = Clamp(zone.Y, 0, Math.Max(0, Grid.ScreenH - h));
             landing = new URect(x, y, w, h);

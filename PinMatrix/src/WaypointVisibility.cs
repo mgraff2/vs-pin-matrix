@@ -34,9 +34,11 @@ namespace PinMatrix
     /// middle-click editing at once — with the waypoint itself untouched. <c>MapComponent.Dispose</c>
     /// is a no-op, so dropped components leak nothing.
     ///
-    /// The list is rebuilt on map-open and on every server resync, so <see cref="Apply"/> re-filters
-    /// from the mod system's existing watcher tick. It costs nothing at all until something is
-    /// actually hidden.
+    /// The list is rebuilt on map-open and on every server resync — including the resync that
+    /// dragging or zooming the map triggers every 32 blocks of travel — so <see cref="Apply"/> has to
+    /// re-filter after each rebuild and before the next draw. That is what
+    /// <see cref="WaypointVisibilityRenderer"/> below is for; read its remarks before moving the call
+    /// anywhere else. It costs nothing at all until something is actually hidden.
     ///
     /// THE REFLECTION IS THE RISK, AND IT FAILS SOFT. Both field names are private; they are
     /// identical in 1.22.0 through 1.22.6 (checked against every server package in tools/server-cache).
@@ -254,5 +256,51 @@ namespace PinMatrix
                 capi.Logger.Error("[pinmatrix] Could not save which waypoints are hidden: {0}", e.Message);
             }
         }
+    }
+
+    /// <summary>
+    /// Re-hides the switched-off pins once per frame, immediately before the GUI is drawn.
+    ///
+    /// WHY THIS IS A RENDERER AND NOT A TICK. Vanilla rebuilds <c>wayPointComponents</c> from
+    /// scratch — hidden pins included — inside <c>WaypointMapLayer.OnDataFromServer</c>, and the
+    /// server re-sends every waypoint each time the map view crosses a 32-block chunk boundary
+    /// (<c>GuiElementMap.EnsureMapFullyLoaded</c> → <c>viewChangedSync</c> →
+    /// <c>OnViewChangedServer</c> → <c>ResendWaypoints</c>). So dragging or zooming the map fires a
+    /// full rebuild every few pixels of travel.
+    ///
+    /// This used to be re-filtered from a 20ms game tick, which is a race against the *render
+    /// frame*, not against wall-clock: at 60-144fps one to three frames could be drawn from the
+    /// rebuilt list before the tick ran, and the hidden pins visibly flashed all the way through a
+    /// drag. No tick interval fixes that — only running after the rebuild and before the draw does.
+    ///
+    /// Packet handling and the rebuild both happen in the game tick, ahead of any render stage, and
+    /// GuiManager draws every dialog at <see cref="EnumRenderStage.Ortho"/> order 1.0 (both the
+    /// world map and the minimap render the layer through that one list). Filtering at Ortho with a
+    /// lower order is therefore the last hook before the pins would be drawn: no frame can render an
+    /// unfiltered list, so the flash is zero rather than merely short.
+    ///
+    /// Costs nothing per frame while nothing is hidden — <see cref="WaypointVisibility.Apply"/>
+    /// returns on its first line, and the supplier is null until the world is joined.
+    /// </summary>
+    public class WaypointVisibilityRenderer : IRenderer
+    {
+        readonly Func<WaypointVisibility> supplier;
+
+        public WaypointVisibilityRenderer(Func<WaypointVisibility> supplier)
+        {
+            this.supplier = supplier;
+        }
+
+        /// <summary>Below GuiManager's 1.0, so this runs before any dialog draws.</summary>
+        public double RenderOrder => 0.9;
+
+        public int RenderRange => 0;
+
+        public void OnRenderFrame(float deltaTime, EnumRenderStage stage)
+        {
+            supplier()?.Apply();
+        }
+
+        public void Dispose() { }
     }
 }

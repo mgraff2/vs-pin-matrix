@@ -14,7 +14,8 @@ namespace PinMatrix
 {
     public enum PmScreen
     {
-        Matrix, Confirm, SetColor, SetIcon, Rename, NewPin, Bin, ImportExport, Share, Layout, MapOptions
+        Matrix, Confirm, SetColor, SetIcon, Rename, NewPin, Bin, ImportExport, Share, Layout, MapOptions,
+        PinSets, EditSet, Tools
     }
 
     public class PendingBulk
@@ -125,20 +126,17 @@ namespace PinMatrix
 
         ElementBounds tableBounds;
 
-        // icon filter strip
-        const double IconCellW = 28;
-        const double IconCellH = 26;
-        // 24 rather than as many as fit: the tail of the strip row is where the visibility filter
-        // lives, and the vanilla icon set wraps to the same two rows either way.
-        const int IconsPerStripRow = 24;
         static readonly double[] IconWhite = { 1, 1, 1, 1 };
-        static readonly double[] IconDim = { 1, 1, 1, 0.45 };        // unpicked icons in the filter strip
         static readonly double[] IconHiddenRow = { 1, 1, 1, 0.7 };   // matches the dimmed text of a hidden row
-        string[] stripIcons = new string[0];
-        ElementBounds iconStripBounds;
         readonly HashSet<string> probedIcons = new HashSet<string>();
         readonly HashSet<string> brokenIcons = new HashSet<string>();
         bool iconAssetsLoaded;
+
+        // icon filter dropdown - values are the icons actually in use, labels carry live counts.
+        // It replaced a 24-per-row clickable grid of every icon the game has, which cost two rows
+        // of the screen to answer a question three of its cells were ever asked.
+        string[] filterIconCodes = { "circle" };
+        bool iconLabelsStale;
 
         // colour filter dropdown — values are the colours actually in use, labels carry live counts
         string[] filterColorHexes = { "#ffffff" };
@@ -173,7 +171,9 @@ namespace PinMatrix
             screen = PmScreen.Matrix;
             pending = null;
 
-            ColorSwatchComponent.EnsureTagRegistered();   // the tag table is wiped on leaving a world
+            // Both tag tables are wiped on leaving a world, so both are re-asserted per open
+            ColorSwatchComponent.EnsureTagRegistered();
+            IconGlyphComponent.EnsureTagRegistered();
             EnsureIconAssetsLoaded();
             // re-decide per open: the assets an earlier open found missing may have loaded since
             probedIcons.Clear();
@@ -216,6 +216,7 @@ namespace PinMatrix
             visibility.PruneTo(new HashSet<string>(allRows.Select(r => r.Key)));
             anchorRow = -1;
             RebuildColorFilterValues();
+            RebuildIconFilterValues();
             ApplyView();
         }
 
@@ -293,6 +294,73 @@ namespace PinMatrix
             dd.SetSelectedValue(colorFilter.ToArray());   // re-ticks the switches and repaints the collapsed label
         }
 
+        // ------------------------------------------------------------------ icon filter dropdown
+
+        /// <summary>
+        /// The dropdown lists only icons some waypoint actually uses, for the same reason the colour
+        /// one does: the full set is 36 entries, and a player's pins use a handful. Recomputed
+        /// whenever the waypoint list changes, dropping any filtered icon that no longer exists.
+        ///
+        /// Undrawable icons stay in the list. Their entry loses its glyph and keeps its code, which
+        /// is strictly better than dropping the entry: the pins using that icon still exist and
+        /// still need a way to be selected.
+        /// </summary>
+        void RebuildIconFilterValues()
+        {
+            var codes = allRows
+                .Select(r => WpCommands.SafeIcon(r.Wp.Icon))
+                .Distinct()
+                .OrderBy(c => c, StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+
+            // A list menu with no entries composes a zero-sized surface, so keep one placeholder
+            filterIconCodes = codes.Length > 0 ? codes : new[] { "circle" };
+            iconFilter.IntersectWith(filterIconCodes);
+        }
+
+        /// <summary>
+        /// One label per icon: the glyph, its code, and how many pins it would show under the
+        /// *other* filters - the same "how many more would this add" count the colour dropdown uses.
+        /// </summary>
+        string[] IconFilterLabels()
+        {
+            var counts = new Dictionary<string, int>();
+            foreach (var r in FilteredExceptIcon())
+            {
+                string code = WpCommands.SafeIcon(r.Wp.Icon);
+                counts.TryGetValue(code, out int n);
+                counts[code] = n + 1;
+            }
+
+            return filterIconCodes
+                .Select(code =>
+                {
+                    string glyph = IconDrawable(code) ? $"<{IconGlyphComponent.TagName} code=\"{code}\"/> " : "";
+                    return $"{glyph}{code} ({(counts.TryGetValue(code, out int n) ? n : 0)})";
+                })
+                .ToArray();
+        }
+
+        /// <summary>Repaints the icon labels so their counts track the other filters. See <see cref="RefreshColorFilterLabels"/>.</summary>
+        void RefreshIconFilterLabels()
+        {
+            var dd = SingleComposer?.GetDropDown("iconfilter");
+            if (dd == null) return;
+
+            if (dd.listMenu.IsOpened) { iconLabelsStale = true; return; }
+
+            iconLabelsStale = false;
+            dd.SetList(filterIconCodes, IconFilterLabels());
+            dd.SetSelectedValue(iconFilter.ToArray());
+        }
+
+        void OnIconFilterChanged(string code, bool selected)
+        {
+            if (selected) iconFilter.Add(code); else iconFilter.Remove(code);
+            ApplyView();
+            UpdateMatrixDynamic();
+        }
+
         bool IsHidden(PinRow r) => visibility.IsHidden(r.Key);
 
         /// <summary>
@@ -303,11 +371,11 @@ namespace PinMatrix
         /// </summary>
         bool DistanceToolsSkipHidden => visFilter != VisFilter.HiddenOnly;
 
-        IEnumerable<PinRow> Filtered(bool useColor, bool useRadius)
+        IEnumerable<PinRow> Filtered(bool useColor, bool useRadius, bool useIcon = true)
         {
             IEnumerable<PinRow> q = allRows;
             if (searchText.Length > 0) q = q.Where(r => (r.Wp.Title ?? "").IndexOf(searchText, StringComparison.OrdinalIgnoreCase) >= 0);
-            if (iconFilter.Count > 0) q = q.Where(r => iconFilter.Contains(WpCommands.SafeIcon(r.Wp.Icon)));
+            if (useIcon && iconFilter.Count > 0) q = q.Where(r => iconFilter.Contains(WpCommands.SafeIcon(r.Wp.Icon)));
             if (useColor && colorFilter.Count > 0) q = q.Where(r => colorFilter.Contains(WpCommands.ColorHex(r.Wp.Color)));
             if (pinnedOnly) q = q.Where(r => r.Wp.Pinned);
             if (visFilter == VisFilter.VisibleOnly) q = q.Where(r => !IsHidden(r));
@@ -334,6 +402,9 @@ namespace PinMatrix
         /// more pins would this colour add", so picking one colour doesn't zero out all the others.
         /// </summary>
         IEnumerable<PinRow> FilteredExceptColor() => Filtered(useColor: false, useRadius: true);
+
+        /// <summary>The base set the icon dropdown counts against - see <see cref="FilteredExceptColor"/>.</summary>
+        IEnumerable<PinRow> FilteredExceptIcon() => Filtered(useColor: true, useRadius: true, useIcon: false);
 
         void ApplyView()
         {
@@ -509,6 +580,7 @@ namespace PinMatrix
 
             // deferred from a filter change made while the dropdown was expanded
             if (screen == PmScreen.Matrix && colorLabelsStale) RefreshColorFilterLabels();
+            if (screen == PmScreen.Matrix && iconLabelsStale) RefreshIconFilterLabels();
 
             string sig;
             try { sig = svc.Signature(); }
@@ -555,6 +627,9 @@ namespace PinMatrix
                 case PmScreen.Share: ComposeShare(composer); break;
                 case PmScreen.Layout: ComposeLayout(composer); break;
                 case PmScreen.MapOptions: ComposeMapOptions(composer); break;
+                case PmScreen.PinSets: ComposePinSets(composer); break;
+                case PmScreen.EditSet: ComposeEditSet(composer); break;
+                case PmScreen.Tools: ComposeTools(composer); break;
             }
 
             var replaced = SingleComposer;
@@ -571,6 +646,7 @@ namespace PinMatrix
             if (screen == PmScreen.ImportExport) RestoreImportExportState();
             if (screen == PmScreen.Layout) RestoreLayoutState();
             if (screen == PmScreen.MapOptions) RestoreMapOptionsState();
+            if (screen == PmScreen.EditSet) RestoreEditSetState();
         }
 
         string TitleFor()
@@ -587,6 +663,9 @@ namespace PinMatrix
                 case PmScreen.Share: return "Pin Matrix — Share pin";
                 case PmScreen.Layout: return "Pin Matrix — Map windows layout";
                 case PmScreen.MapOptions: return "Pin Matrix — Map options";
+                case PmScreen.PinSets: return "Pin Matrix — Pin sets";
+                case PmScreen.EditSet: return editingIsNew ? "Pin Matrix — New pin set" : "Pin Matrix — Edit pin set";
+                case PmScreen.Tools: return "Pin Matrix — Tools";
                 default: return "Pin Matrix — Waypoint manager";
             }
         }
@@ -608,6 +687,9 @@ namespace PinMatrix
         void GoBack()
         {
             if (screen == PmScreen.Layout) OnBackToMap();
+            // The editor was opened from the sets list, so closing it lands back there rather than
+            // skipping a level - the same rule the Layout screen follows for its own entry point.
+            else if (screen == PmScreen.EditSet) { editingSet = null; OpenPinSets(); }
             else BackToMatrix();
         }
 
@@ -627,48 +709,43 @@ namespace PinMatrix
             var font = CairoFont.WhiteSmallText();
             double y = 38;
 
-            // Filter bar. The colour dropdown's extra width is taken from the search box and the
-            // radius slider — NOT from the labels: a static text narrower than its string wraps to a
-            // second line and overruns the row below it, so these widths carry real slack on purpose.
+            // Filter row one - the four questions worth asking about a pin: what is it called, what
+            // colour is it, what icon is it, is it pinned. The colour and icon dropdowns both list
+            // only values some pin actually uses and carry live counts, so the two of them together
+            // are also the answer to "what have I got".
+            //
+            // Widths are load-bearing. GuiElementListMenu sizes the expanded list to the widest
+            // entry but forgets to add the multi-select checkbox column it then shifts every entry
+            // by, so the tail of each label - the count - is clipped unless the element's own width
+            // already covers glyph + text + count + that offset. -1 preselects nothing: index 0
+            // would tick the first entry's checkbox without actually filtering on it.
             c.AddStaticText("Search", font, EB(4, y + 4, 52, 25));
             c.AddTextInput(EB(58, y, 124, 28), OnSearchChanged, font, "search");
-
-            // Width is load-bearing. GuiElementListMenu sizes the expanded list to the widest entry
-            // but forgets to add the multi-select checkbox column it then shifts every entry by, so
-            // the tail of each label — the count — is clipped unless the element's own width already
-            // covers swatch + hex + count + that offset. -1 preselects nothing: index 0 would tick
-            // the first colour's checkbox without actually filtering on it.
             c.AddMultiSelectDropDown(filterColorHexes, ColorFilterLabels(), -1, OnColorFilterChanged, EB(190, y, 200, 28), "colorfilter");
+            c.AddMultiSelectDropDown(filterIconCodes, IconFilterLabels(), -1, OnIconFilterChanged, EB(396, y, 170, 28), "iconfilter");
+            c.AddSwitch(OnPinnedOnlyToggled, EB(574, y, 28, 28), "pinnedonly", 25, 3);
+            c.AddStaticText("Pinned only", font, EB(606, y + 4, 110, 25));
+            c.AddSmallButton(VisFilterLabel(), OnVisFilterClicked, EB(744, y, 148, 28), EnumButtonStyle.Small);
 
-            c.AddSwitch(OnPinnedOnlyToggled, EB(398, y, 28, 28), "pinnedonly", 25, 3);
-            c.AddStaticText("Pinned only", font, EB(430, y + 4, 110, 25));
-            c.AddStaticText("Within", font, EB(546, y + 4, 46, 25));
-            c.AddNumberInput(EB(594, y, 60, 28), OnRadiusChanged, font, "radius");
-            c.AddSlider(OnRadiusSlider, EB(660, y + 4, 138, 20), "radiusslider");
-            c.AddSmallButton("Next pin", OnRadiusNextPin, EB(804, y, 81, 28), EnumButtonStyle.Small);
-
-            // icon filter strip (click icons to toggle; multi-select)
-            y += 36;
-            stripIcons = svc.IconCodes();
-            int stripRows = Math.Max(1, (stripIcons.Length + IconsPerStripRow - 1) / IconsPerStripRow);
-            double stripH = stripRows * IconCellH;
-            c.AddStaticText("Icons", font, EB(4, y + 2, 52, 25));
-            c.AddInset(EB(56, y - 2, IconsPerStripRow * IconCellW + 8, stripH + 4), 3);
-            iconStripBounds = EB(60, y, IconsPerStripRow * IconCellW, stripH);
-            c.AddDynamicCustomDraw(iconStripBounds, DrawIconStrip, "iconstrip");
-            c.AddSmallButton(VisFilterLabel(), OnVisFilterClicked, EB(744, y - 2, 148, 26), EnumButtonStyle.Small);
+            // Filter row two - distance, then what to do with a filter once you have one.
+            y += 34;
+            c.AddStaticText("Within", font, EB(4, y + 4, 52, 25));
+            c.AddNumberInput(EB(58, y, 60, 28), OnRadiusChanged, font, "radius");
+            c.AddSlider(OnRadiusSlider, EB(124, y + 4, 138, 20), "radiusslider");
+            c.AddSmallButton("Next pin", OnRadiusNextPin, EB(268, y, 81, 28), EnumButtonStyle.Small);
+            c.AddSmallButton("Save as set...", OnSaveFilterAsSet, EB(358, y, 130, 28), EnumButtonStyle.Small);
+            c.AddSmallButton("Clear filters", OnClearFilters, EB(494, y, 116, 28), EnumButtonStyle.Small);
 
             // selection row
-            y += stripH + 10;
+            y += 34;
             c.AddSmallButton("Select all filtered", OnSelectAllFiltered, EB(4, y, 148, 26));
             c.AddSmallButton("Clear selection", OnClearSelection, EB(158, y, 132, 26));
-            c.AddSmallButton("Clear filters", OnClearFilters, EB(296, y, 116, 26));
             // Rule of thumb for every label on this dialog: a static text needs ~9.5 unscaled px per
-            // character plus padding, and one that comes up short does not ellipsize — it wraps to a
+            // character plus padding, and one that comes up short does not ellipsize - it wraps to a
             // second line and overruns whatever is drawn below it. Round up.
-            c.AddSwitch(OnGroupDuplicatesToggled, EB(420, y - 1, 26, 26), "groupdupes", 23, 3);
-            c.AddStaticText("Group duplicates", font, EB(452, y + 4, 160, 24));
-            c.AddDynamicText(StatusText(), font.Clone().WithOrientation(EnumTextOrientation.Right), EB(616, y + 4, DW - 616, 24), "status");
+            c.AddSwitch(OnGroupDuplicatesToggled, EB(300, y - 1, 26, 26), "groupdupes", 23, 3);
+            c.AddStaticText("Group duplicates", font, EB(332, y + 4, 160, 24));
+            c.AddDynamicText(StatusText(), font.Clone().WithOrientation(EnumTextOrientation.Right), EB(500, y + 4, DW - 500, 24), "status");
 
             // header row (sort buttons)
             y += 34;
@@ -701,47 +778,54 @@ namespace PinMatrix
             c.AddDynamicText(HiddenText(), font, EB(286, y + 4, 130, 24), "hiddeninfo");
             c.AddDynamicText(notice, font.Clone().WithOrientation(EnumTextOrientation.Right), EB(420, y + 4, DW - 420, 24), "notice");
 
-            // action row A — mutations
+            // Action row A - the mutations, which all go through the confirmation screen.
             y += 34;
             c.AddSmallButton("Delete", () => { BuildDelete(); return true; }, EB(4, y, 84, 28));
             c.AddSmallButton("Set color...", () => { OpenSetColor(); return true; }, EB(94, y, 104, 28));
             c.AddSmallButton("Set icon...", () => { OpenSetIcon(); return true; }, EB(204, y, 100, 28));
-            c.AddSmallButton("Pin", () => { BuildPin(true); return true; }, EB(310, y, 58, 28));
-            c.AddSmallButton("Unpin", () => { BuildPin(false); return true; }, EB(374, y, 72, 28));
-            c.AddSmallButton("Rename...", () => { OpenRename(); return true; }, EB(452, y, 100, 28));
+            c.AddSmallButton("Rename...", () => { OpenRename(); return true; }, EB(310, y, 100, 28));
+            c.AddSmallButton("Pin", () => { BuildPin(true); return true; }, EB(416, y, 58, 28));
+            c.AddSmallButton("Unpin", () => { BuildPin(false); return true; }, EB(480, y, 72, 28));
             c.AddSmallButton("Undo last bulk", () => { BuildUndo(); return true; }, EB(558, y, 134, 28));
-            int dupes = DuplicateCount();
-            c.AddSmallButton(dupes > 0 ? $"Fix duplicates ({dupes})..." : "Fix duplicates...",
-                () => { BuildFixDuplicates(); return true; }, EB(698, y, 170, 28));
 
-            // action row B — non-mutating / other
+            // Action row B - things that change nothing on the server. Hide/Show take effect
+            // instantly and are undone by clicking the other one, so they are deliberately kept
+            // away from the row above.
             y += 34;
-            c.AddSmallButton("New pin...", () => { OpenNewPin(); return true; }, EB(4, y, 100, 28));
-            c.AddSmallButton("Export / Import...", () => { screen = PmScreen.ImportExport; Recompose(); return true; }, EB(110, y, 160, 28));
-            c.AddSmallButton($"Recycle bin ({bin.Entries.Count})...", () => { OpenBin(); return true; }, EB(276, y, 160, 28));
-            // Refresh lives here with the other utilities: the selection row it used to share needed
-            // the width for the grouping toggle, and this row has room to spare.
-            c.AddSmallButton("Refresh", OnRefreshClicked, EB(442, y, 88, 28));
-            // Hide/Show belong on this row, not with the mutations above: they change nothing on the
-            // server, take effect instantly and are undone by clicking the other one.
-            c.AddSmallButton("Hide", () => { ApplyVisibility(true); return true; }, EB(536, y, 56, 28));
-            c.AddSmallButton("Show", () => { ApplyVisibility(false); return true; }, EB(596, y, 58, 28));
-            if (config.EnableMapRefresh)
-            {
-                c.AddSmallButton("Redraw map", () => { ExecuteMapRedraw(); return true; }, EB(660, y, 86, 28));
-            }
-            // The layout *grid* is deliberately NOT configured from here — it can only be judged
-            // while you are looking at it, so that lives behind the "Layout Options" button on the
-            // map screen. What Map options carries is the switch that makes the map-screen Layout
-            // Zones button exist at all, which has to be reachable without that button.
+            c.AddSmallButton("Hide", () => { ApplyVisibility(true); return true; }, EB(4, y, 56, 28));
+            c.AddSmallButton("Show", () => { ApplyVisibility(false); return true; }, EB(66, y, 58, 28));
+            c.AddSmallButton("Pin sets...", () => { OpenPinSets(); return true; }, EB(130, y, 120, 28));
+            c.AddSmallButton("New pin...", () => { OpenNewPin(); return true; }, EB(256, y, 100, 28));
+
+            // Action row C - the way out, and the two screens that hold everything else.
+            //
+            // Tools and Map options are both "cabinets": the buttons behind them are ones you press
+            // rarely and deliberately, and having them all on this screen at once was the clutter
+            // that made the common ones hard to find. What is NOT allowed to move into a cabinet is
+            // a signal - so the counts that used to live on the "Fix duplicates" and "Fix same-spot"
+            // buttons are still on this screen, as a line of text beside the button they are behind.
             y += 34;
-            c.AddSmallButton("Map options...", () => { screen = PmScreen.MapOptions; Recompose(); return true; }, EB(4, y, 160, 28));
-            // Separate from "Fix duplicates" on purpose: that one only ever removes pins you cannot
-            // tell apart, this one removes pins that differ in everything but where they are.
-            int spots = SameSpotCount();
-            c.AddSmallButton(spots > 0 ? $"Fix same-spot pins ({spots})..." : "Fix same-spot pins...",
-                () => { BuildFixSameSpot(); return true; }, EB(170, y, 250, 28));
+            c.AddSmallButton("Tools...", () => { screen = PmScreen.Tools; Recompose(); return true; }, EB(4, y, 100, 28));
+            c.AddSmallButton("Map options...", () => { screen = PmScreen.MapOptions; Recompose(); return true; }, EB(110, y, 160, 28));
+            c.AddDynamicText(ToolsHintText(), font, EB(280, y + 5, 380, 24), "toolshint");
             c.AddSmallButton("Back to map", () => { OnBackToMap(); return true; }, EB(DW - 146, y, 142, 28));
+        }
+
+        /// <summary>
+        /// What the Tools screen would tell you if you opened it. Duplicates and same-spot pins are
+        /// the only things in there that are a *fact about your data* rather than an action, and a
+        /// fact you cannot see is a fact you never act on - so it stays on the main screen even
+        /// though its buttons did not.
+        /// </summary>
+        string ToolsHintText()
+        {
+            var parts = new List<string>();
+            int dupes = DuplicateCount();
+            int spots = SameSpotCount();
+            if (dupes > 0) parts.Add($"{dupes} duplicate{(dupes == 1 ? "" : "s")}");
+            if (spots > 0) parts.Add($"{spots} same-spot");
+            if (bin.Entries.Count > 0) parts.Add($"{bin.Entries.Count} in bin");
+            return parts.Count == 0 ? "" : "Tools: " + string.Join(" · ", parts);
         }
 
         void OnBackToMap()
@@ -776,6 +860,7 @@ namespace PinMatrix
             slider.SetValues(RungIndexFor(radius), 0, RadiusRungs.Length - 1, 1);
             if (radius > 0) radiusInput.SetValue(radius.ToString("0.#", CultureInfo.InvariantCulture));
             if (colorFilter.Count > 0) c.GetDropDown("colorfilter").SetSelectedValue(colorFilter.ToArray());
+            if (iconFilter.Count > 0) c.GetDropDown("iconfilter").SetSelectedValue(iconFilter.ToArray());
             c.GetSwitch("groupdupes").SetValue(groupDuplicates);
         }
 
@@ -800,12 +885,13 @@ namespace PinMatrix
         {
             if (screen != PmScreen.Matrix || SingleComposer == null) return;
             (SingleComposer.GetElement("table") as GuiElementCustomDraw)?.Redraw();
-            (SingleComposer.GetElement("iconstrip") as GuiElementCustomDraw)?.Redraw();
             SingleComposer.GetDynamicText("status")?.SetNewText(StatusText(), false, true, false);
             SingleComposer.GetDynamicText("pageinfo")?.SetNewText(PageText(), false, true, false);
             SingleComposer.GetDynamicText("hiddeninfo")?.SetNewText(HiddenText(), false, true, false);
             SingleComposer.GetDynamicText("notice")?.SetNewText(notice, false, true, false);
+            SingleComposer.GetDynamicText("toolshint")?.SetNewText(ToolsHintText(), false, true, false);
             RefreshColorFilterLabels();
+            RefreshIconFilterLabels();
         }
 
         // ------------------------------------------------------------------ filter/sort/paging handlers
@@ -814,47 +900,6 @@ namespace PinMatrix
         {
             if (text == searchText) return;
             searchText = text ?? "";
-            ApplyView();
-            UpdateMatrixDynamic();
-        }
-
-        void DrawIconStrip(Context ctx, ImageSurface surface, ElementBounds bounds)
-        {
-            for (int i = 0; i < stripIcons.Length; i++)
-            {
-                string code = stripIcons[i];
-                double cx = GuiElement.scaled((i % IconsPerStripRow) * IconCellW);
-                double cy = GuiElement.scaled((i / IconsPerStripRow) * IconCellH);
-                double cw = GuiElement.scaled(IconCellW - 2);
-                double ch = GuiElement.scaled(IconCellH - 2);
-                bool isSel = iconFilter.Contains(code);
-
-                if (isSel)
-                {
-                    ctx.SetSourceRGBA(0.45, 0.62, 0.3, 0.55);
-                    ctx.Rectangle(cx, cy, cw, ch);
-                    ctx.Fill();
-                    ctx.SetSourceRGBA(0.7, 0.9, 0.5, 0.9);
-                    ctx.LineWidth = 1.5;
-                    ctx.Rectangle(cx, cy, cw, ch);
-                    ctx.Stroke();
-                }
-
-                DrawIconGlyph(ctx, code, cx + GuiElement.scaled(3), cy + GuiElement.scaled(2.5),
-                    GuiElement.scaled(20), isSel ? IconWhite : IconDim);
-            }
-        }
-
-        void HandleIconStripClick(MouseEvent args)
-        {
-            int col = (int)((args.X - iconStripBounds.absX) / GuiElement.scaled(IconCellW));
-            int row = (int)((args.Y - iconStripBounds.absY) / GuiElement.scaled(IconCellH));
-            int idx = row * IconsPerStripRow + col;
-            args.Handled = true;
-            if (col < 0 || col >= IconsPerStripRow || idx < 0 || idx >= stripIcons.Length) return;
-
-            string code = stripIcons[idx];
-            if (!iconFilter.Add(code)) iconFilter.Remove(code);
             ApplyView();
             UpdateMatrixDynamic();
         }
@@ -883,30 +928,12 @@ namespace PinMatrix
             capi.Gui.Text.DrawTextLine(ctx, font, code.Length > 3 ? code.Substring(0, 3) : code, xPx, yPx, false);
         }
 
-        /// <summary>
-        /// Loads the worldmap icon SVGs, which is what actually makes them drawable.
-        ///
-        /// <see cref="WaypointMapLayer"/> indexes <c>textures/icons/worldmap/</c> with
-        /// <c>loadAsset: false</c> and registers a custom GUI icon per asset whose renderer draws the
-        /// <c>IAsset</c> *object* — so until something loads that object's data, painting the icon
-        /// throws `ArgumentNullException("svgAsset")`. Vanilla loads them lazily, when the world map
-        /// first builds its waypoint icon textures, so a session that opens Pin Matrix without ever
-        /// opening the map has most of the set still unloaded. <c>GetMany</c> hands back the *cached*
-        /// asset instances and fills them in place, so this populates exactly the objects those
-        /// renderers closed over.
-        /// </summary>
+        /// <summary>Loads the worldmap icon SVGs; see <see cref="WaypointIconAssets"/> for why that is needed.</summary>
         void EnsureIconAssetsLoaded()
         {
             if (iconAssetsLoaded) return;
             iconAssetsLoaded = true;
-            try
-            {
-                capi.Assets.GetMany("textures/icons/worldmap/", null, true);
-            }
-            catch (Exception e)
-            {
-                capi.Logger.Warning("[pinmatrix] Could not preload the waypoint icon assets: {0}", e.Message);
-            }
+            WaypointIconAssets.EnsureLoaded(capi);
         }
 
         /// <summary>
@@ -1405,11 +1432,6 @@ namespace PinMatrix
             if (screen == PmScreen.Matrix && tableBounds != null && tableBounds.PointInside(args.X, args.Y))
             {
                 HandleTableClick(args);
-                return;
-            }
-            if (screen == PmScreen.Matrix && iconStripBounds != null && iconStripBounds.PointInside(args.X, args.Y))
-            {
-                HandleIconStripClick(args);
                 return;
             }
             if (screen == PmScreen.Bin && binTableBounds != null && binTableBounds.PointInside(args.X, args.Y))

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Vintagestory.API.Client;
 using Vintagestory.API.Common;
 using Vintagestory.API.Config;
@@ -15,6 +16,8 @@ namespace PinMatrix
         BatchEngine batch;
         RecycleBin bin;
         WaypointVisibility visibility;
+        PinSetService pinSets;
+        HudPinSetPanel setPanel;
         GuiDialogPinMatrix dialog;
         readonly List<HudPinMatrixButtonWindow> buttons = new List<HudPinMatrixButtonWindow>();
         ChatShareLinks chatShareLinks;
@@ -22,6 +25,7 @@ namespace PinMatrix
         TraderMarkers traders;
         TranslocatorPaths tlPaths;
         HudLayoutOverlay layoutOverlay;
+        WaypointVisibilityRenderer visibilityRenderer;
         long mapWatchListenerId;
         long visibilityListenerId;
         bool layoutPinned;
@@ -34,6 +38,7 @@ namespace PinMatrix
         {
             capi = api;
             ColorSwatchComponent.EnsureTagRegistered();
+            IconGlyphComponent.EnsureTagRegistered();
 
             try
             {
@@ -64,21 +69,21 @@ namespace PinMatrix
             capi.ModLoader.GetModSystem<WorldMapManager>()?.RegisterMapLayer<TranslocatorPathLayer>("pinmatrixtl", 1.1);
 
             mapWatchListenerId = capi.Event.RegisterGameTickListener(OnMapWatchTick, 250);
-            // Separate from the 250ms watcher and deliberately per-frame: vanilla rebuilds its
-            // waypoint marker list on map-open and on every resync, and anything slower than this
-            // lets the hidden pins flash back onto the map for a few frames each time. The call
-            // returns immediately while nothing is hidden.
             visibilityListenerId = capi.Event.RegisterGameTickListener(OnVisibilityTick, 20);
+            // Re-hiding the switched-off pins is NOT on the tick above, and must not be moved onto
+            // it: it is a race against the render frame rather than against wall-clock, so it runs
+            // once per frame just before the GUI draws. See WaypointVisibilityRenderer for why.
+            visibilityRenderer = new WaypointVisibilityRenderer(() => visibility);
+            capi.Event.RegisterRenderer(visibilityRenderer, EnumRenderStage.Ortho, "pinmatrix-hidden-pins");
             chatShareLinks = new ChatShareLinks(capi);
         }
 
         /// <summary>Shows/hides the "Pin Matrix Editor" button in sync with the full world map dialog.</summary>
-        /// <summary>Re-hides the switched-off pins after each of vanilla's own marker rebuilds.</summary>
+        /// <summary>Keeps the translocator paths and the zone overlay in step with the world.</summary>
         void OnVisibilityTick(float dt)
         {
             if (capi.World?.Player == null) return;
             EnsureServices();
-            visibility.Apply();
             EnsureTlPaths().Tick();
             UpdateLayoutOverlay();
         }
@@ -178,7 +183,17 @@ namespace PinMatrix
 
             if (fullMapOpen)
             {
+                // One pass over the waypoints for every set's count, ahead of the labels that read
+                // it. Only while the map is open, because that is the only time a label is on screen.
+                pinSets?.Recount();
+                // The panel can be the first thing in the session to paint a waypoint icon — the
+                // editor need never have been opened — and an unloaded SVG paints as a blank chip.
+                if (pinSets != null && pinSets.Buttoned.Any(s => s.UsesIconButton))
+                {
+                    WaypointIconAssets.EnsureLoaded(capi);
+                }
                 EnsureButtons();
+                UpdateSetPanel(true);
                 foreach (var b in buttons)
                 {
                     // A window with nothing visible in it must never be opened: its background sizes
@@ -194,7 +209,55 @@ namespace PinMatrix
             else
             {
                 foreach (var b in buttons) if (b.IsOpened()) b.TryClose();
+                UpdateSetPanel(false);
             }
+        }
+
+        /// <summary>
+        /// Shows the pin-set filter panel while the full map is open, and only then.
+        ///
+        /// It is the map's own furniture — a column of on/off rows down the right, in the spirit of
+        /// the Terrain / Waypoints / Prospecting toggles on the left — so it lives and dies with the
+        /// map exactly as those do. Unlike the map-screen buttons it is NOT gated on the layout
+        /// feature: it replaces no space that was not already free, and a filter list is not the kind
+        /// of thing a player should have to opt into a window manager to get.
+        /// </summary>
+        void UpdateSetPanel(bool mapOpen)
+        {
+            if (!mapOpen)
+            {
+                if (setPanel != null && setPanel.IsOpened()) setPanel.TryClose();
+                return;
+            }
+
+            EnsureServices();
+            if (setPanel == null)
+            {
+                setPanel = new HudPinSetPanel(capi, config, pinSets, ToggleSet,
+                    () => capi.StoreModConfig(config, "pinmatrix.json"));
+                // OwnDialogs keeps it out of the HUD obstacle scan; SelfPlaced keeps the layout
+                // manager's per-tick re-apply off it. It is not a snap target — see the class doc.
+                layout.OwnDialogs.Add(setPanel);
+                layout.SelfPlaced.Add(HudPinSetPanel.PanelDialogName);
+                // A development build did let it be snapped. Drop any zone left over from one, so an
+                // old config cannot strand the panel away from the map edge it now always follows.
+                layout.Unsnap(HudPinSetPanel.PanelDialogName);
+            }
+
+            // Nothing saved means nothing to filter: an empty panel is an advert for a feature, and
+            // the map screen has no room for one.
+            if (setPanel.IsEmpty)
+            {
+                if (setPanel.IsOpened()) setPanel.TryClose();
+                return;
+            }
+
+            if (!setPanel.IsOpened()) setPanel.TryOpen();
+
+            // Always beside the map, re-measured each tick: the panel belongs to the map's right
+            // edge, and that edge moves with GUI scale and window size.
+            setPanel.AnchorToMap();
+            setPanel.RefreshIfNeeded();
         }
 
         /// <summary>
@@ -203,7 +266,7 @@ namespace PinMatrix
         /// their buttons run:
         ///
         ///   Fixed cell — one window, buttons in a column, snapped to a cell
-        ///   Tab row    — one window, buttons in a row, spread along the dock row
+        ///   Tab row    — one window, buttons in a row, stretched across the row it is dropped on
         ///   Floating   — one window per button, each placed independently
         ///
         /// Every one is an ordinary named window, so the zone grid and the saved-position store
@@ -211,6 +274,10 @@ namespace PinMatrix
         /// </summary>
         void EnsureButtons()
         {
+            // `mode` is compared against "row"/"parallel"/"float" all through this method. It must
+            // hold nothing but the mode: folding anything else into it (a set-list signature, during
+            // 1.6.0 development) makes every one of those comparisons false and silently collapses
+            // every placement mode to stacked.
             string mode = ButtonMode();
             if (buttons.Count > 0 && builtForMode == mode) return;
 
@@ -261,6 +328,29 @@ namespace PinMatrix
         /// <summary>Layout off falls back to the plain stacked window at its default spot.</summary>
         string ButtonMode() => config.LayoutEnabled ? config.LayoutButtonMode : "stacked";
 
+        /// <summary>
+        /// A row of the map's pin-set panel being clicked: hide the set if any of it is showing,
+        /// otherwise show all of it. The row already shows which — lit or greyed — so there is
+        /// nothing to confirm, and clicking again undoes it exactly, which is what makes an
+        /// unconfirmed bulk action safe here.
+        /// </summary>
+        public void ToggleSet(string setId)
+        {
+            EnsureServices();
+            var set = pinSets.ById(setId);
+            if (set == null) return;
+
+            if (!visibility.Available)
+            {
+                capi.ShowChatMessage("[Pin Matrix] Hiding pins is not available on this game version - see the client log.");
+                return;
+            }
+
+            bool hiding = pinSets.WouldHide(set);
+            int changed = pinSets.Apply(set, hiding);
+            if (changed == 0) capi.ShowChatMessage("[Pin Matrix] No pins match \"" + set.Name + "\" right now.");
+        }
+
         /// <summary>Re-labels and re-chromes the buttons after the zone overlay is toggled.</summary>
         void RefreshButtons()
         {
@@ -288,7 +378,6 @@ namespace PinMatrix
             if (buttons.Count == 0 || layout == null) return;
 
             string mode = ButtonMode();
-            var grid = layout.Grid;
 
             foreach (var b in buttons)
             {
@@ -305,13 +394,22 @@ namespace PinMatrix
                     continue;
                 }
 
-                if (mode == "row" && config.LayoutButtonRow >= 0)
+                if (mode == "row")
                 {
                     // The tab row spans the whole screen and divides itself between the buttons,
                     // rather than being a fixed-width strip parked on a row. That is the point of a
                     // tab row: it reads as a bar, not as a window that happens to sit low down.
-                    b.SetStretchWidth(grid.ScreenW - 8);
-                    b.SetPosition(0, config.LayoutButtonRow * grid.CellH);
+                    //
+                    // WHICH row is no longer a number typed on the Layout screen — it is the row the
+                    // bar has been dragged onto, read back from its own snap assignment
+                    // (LayoutManager.ButtonRowIndex). Dropping it anywhere on a row puts the bar
+                    // across that row, which is why the drop is not treated as a corner to sit in.
+                    var strip = layout.ButtonRowRect();
+                    // SetStretchWidth is the inner content width; the window pads itself by 8, and
+                    // the two have to agree or the bar lands one padding short of the row it was
+                    // asked to fill.
+                    b.SetStretchWidth(strip.W - 8);
+                    b.SetPosition(strip.X, strip.Y);
                 }
                 else if (mode == "stacked" || mode == "parallel")
                 {
@@ -325,6 +423,9 @@ namespace PinMatrix
                     else
                     {
                         var cell = layout.OwnButtonCell();
+                        // Both windows are configured to the same cell, so the sets window starts
+                        // just clear of the fixed one instead of underneath it. Only until it is
+                        // dragged — a player position wins above, and the grid is right there.
                         b.SetPosition(cell.X, cell.Y);
                     }
                 }
@@ -463,6 +564,24 @@ namespace PinMatrix
         {
             if (svc == null) svc = new WaypointService(capi);
             if (visibility == null) visibility = new WaypointVisibility(capi, svc);
+            if (pinSets == null)
+            {
+                pinSets = new PinSetService(config, svc, visibility, () => capi.StoreModConfig(config, "pinmatrix.json"));
+            }
+        }
+
+        /// <summary>Saved filters and their map buttons; read by the editor's Pin sets screen.</summary>
+        public PinSetService Sets { get { EnsureServices(); return pinSets; } }
+
+        /// <summary>
+        /// Re-reads the sets after the editor changes them, so the map panel is right the moment the
+        /// player gets back to the map. Called by the editor rather than polled — the alternative is
+        /// diffing the config four times a second forever.
+        /// </summary>
+        public void RefreshSetPanel()
+        {
+            pinSets?.Recount();
+            setPanel?.MarkDirty();
         }
 
         TraderMarkers EnsureTraders()
@@ -523,6 +642,19 @@ namespace PinMatrix
                         if (layout == null) return TextCommandResult.Error("Pin Matrix is not active.");
                         int n = layout.ResetAll();
                         return TextCommandResult.Success($"[Pin Matrix] Cleared {n} remembered window zone(s).");
+                    })
+                .EndSubCommand()
+
+                .BeginSubCommand("unsnap")
+                    .WithDescription("Release one window from its zone: .pinmatrix unsnap [name] (no name lists them)")
+                    .WithArgs(capi.ChatCommands.Parsers.OptionalAll("name"))
+                    .HandleWith(args =>
+                    {
+                        if (layout == null) return TextCommandResult.Error("Pin Matrix is not active.");
+                        string query = args.ArgCount > 0 ? args[0] as string : null;
+                        // Line by line: a single multi-line chat message is truncated.
+                        foreach (var line in layout.UnsnapMatching(query).Split('\n')) capi.ShowChatMessage(line.TrimEnd());
+                        return TextCommandResult.Success();
                     })
                 .EndSubCommand()
 
@@ -601,7 +733,14 @@ namespace PinMatrix
                 capi.Event.UnregisterGameTickListener(visibilityListenerId);
                 visibilityListenerId = 0;
             }
+            if (visibilityRenderer != null && capi != null)
+            {
+                capi.Event.UnregisterRenderer(visibilityRenderer, EnumRenderStage.Ortho);
+                visibilityRenderer = null;
+            }
             layout?.FlushPositionsNow();
+            setPanel?.Dispose();
+            setPanel = null;
             foreach (var b in buttons) b.Dispose();
             buttons.Clear();
             layoutOverlay?.Dispose();

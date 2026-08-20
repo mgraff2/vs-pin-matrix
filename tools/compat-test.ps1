@@ -57,6 +57,10 @@ if (-not $SkipBuild) {
     New-Item -ItemType Directory -Force $staging | Out-Null
     Copy-Item "$root\PinMatrix\modinfo.json" $staging
     Copy-Item "$root\PinMatrix\bin\Release\PinMatrix.dll" $staging
+    # assets\ is lang files only, and only because the world map labels our map-layer tab with
+    # Lang.Get("maplayer-" + LayerGroupCode) and shows the raw key when it cannot resolve one.
+    # Anything beyond lang belongs under the cross-mod recipe warning in CLAUDE.md before it ships.
+    if (Test-Path "$root\PinMatrix\assets") { Copy-Item -Recurse "$root\PinMatrix\assets" $staging }
     New-Item -ItemType Directory -Force "$root\dist" | Out-Null
     Compress-Archive -Path "$staging\*" -DestinationPath $ourZip -Force
 }

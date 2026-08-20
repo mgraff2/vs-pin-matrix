@@ -5,7 +5,7 @@ Spec: [pin-matrix-mod-spec.md](pin-matrix-mod-spec.md).
 
 ## Installed & ready
 
-`dist/pinmatrix_1.5.0.zip` is already copied to `%APPDATA%\VintagestoryData\Mods\`. Launch the game, load a world, open the map (**M**) and click the **Pin Matrix Editor** button (top right). Optionally bind a hotkey to "Pin Matrix (waypoint manager)" in Settings → Controls — it ships unbound.
+`dist/pinmatrix_1.6.0.zip` is already copied to `%APPDATA%\VintagestoryData\Mods\`. Launch the game, load a world, open the map (**M**) and click the **Pin Matrix Editor** button (top right). Optionally bind a hotkey to "Pin Matrix (waypoint manager)" in Settings → Controls — it ships unbound.
 
 ## Building
 
@@ -23,15 +23,16 @@ Package = zip of `modinfo.json` + `bin/Release/PinMatrix.dll`.
 ## What to test first
 
 1. **Read-only pass:** open dialog (P) — table lists your waypoints; sort by clicking headers; search/filters; pagination. Try the radius slider: sort by Dist, then drag the slider next to "Within … blocks" slowly right from "off" — the nearest pins should appear in growing rings (10, 25, 50, … 10000); mouse wheel over the slider ticks one notch. Typing an exact number in the box still works and snaps the slider handle to the nearest notch. **Next pin** starts from "off" showing only your closest pin and reveals one more distance shell per click (respecting the other filters); at the last pin it reports "No pins beyond the current radius."
-2. **Colour filter:** open the colour dropdown — every entry should be a painted swatch + hex + count, listing only colours your waypoints actually use, sorted round the colour wheel with greys first, and nothing ticked on a fresh open. Type in the search box or click an icon in the strip and reopen the dropdown: the counts must have followed those filters. Ticking a colour must *not* change the other entries' counts.
+2. **Colour filter:** open the colour dropdown — every entry should be a painted swatch + hex + count, listing only colours your waypoints actually use, sorted round the colour wheel with greys first, and nothing ticked on a fresh open. Type in the search box or tick an icon in the icon dropdown and reopen the colour one: the counts must have followed those filters. Ticking a colour must *not* change the other entries' counts.
 3. **Duplicates:** make 3 identical pins (New pin, same name/icon/colour/position), then flip **Group duplicates** — they collapse to one row marked `x 3 copies`. Click the header to unfold, click its checkbox to select all three, click the header again to refold. Then **Fix duplicates (N)...** → the preview must list exactly 2 of them (the original is kept) → confirm → restore from the recycle bin afterwards.
 4. **Hide/show (1.4.0):** click the eye in the **Vis** column of one row — the pin must vanish from the world map *and* the minimap (open the map to check) while the row stays in the table, dimmed, with a struck-through eye; the `N hidden` count appears by the pagination controls. Click it again to bring it back. Then the real workflow: filter to one icon → **Select all filtered** → **Hide** → the map loses that whole class of pin instantly (no chat spam, no confirm screen) → **Show** restores them. Cycle the **Show: all / visible / hidden** button and confirm the table follows it. With hidden pins present and the filter on **all**, **Next pin** and the radius slider must walk past them; switch to **Show: hidden** and they must work on the hidden ones instead. Finally: hide a few pins, leave the world, come back — they must still be hidden (state is per savegame); delete a hidden pin via the recycle bin round trip and its restored copy must come back visible.
-5. **Selection:** click rows (toggles), shift-click (range), "Select all filtered".
-6. **The §4 index-shift test:** create 5 pins (`New pin...`), select #1/#3/#5, Delete → confirm — #2/#4 must survive. Restore from bin afterwards.
-7. **Bulk edit:** filter to an icon, select all filtered, Set color → preview shows before→after → confirm. Then "Undo last bulk".
-8. **Row actions:** Edit (opens the vanilla waypoint dialog — it must appear *in front of* the Pin Matrix window, with typing landing in its title box immediately), Map (centers the world map), Move (re-creates at new coords), Share (chat/clipboard sharing), double-click row = show on map.
-9. **Export/Import:** export all, then re-import the same file — everything should be skipped as duplicates.
-10. **Share:** row Share button → "Send to chat" posts the share line and (because your own client also runs Pin Matrix) a clickable "[Pin Matrix] Click here to add..." line should follow it — clicking shows the vanilla confirm prompt and re-creates the pin (a duplicate, since you already own it — delete it after). "Copy command" → paste into Notepad/Discord, then paste into the chat box and send — same pin appears.
+5. **Pin sets (1.6.0):** filter to something (say one icon plus a search word), press **Save as set...**, name it, pick an icon, Save. Open the world map: the **pin-set panel** must appear down the right-hand side with that set as a row — icon in colour, name, count. Click the row: every matching pin leaves the map at once and the icon greys out; click again to bring them back. Add a *new* pin matching the set's criteria and confirm the count grows without touching the set (the filter is re-evaluated, not a saved list). Save a set with **no** icon and confirm its row shows a plain colour chip instead. Then save enough sets to overflow the panel and confirm it pages rather than running off the screen, and that the pager remembers its page while you toggle rows. Finally untick **Show in the map panel** on one set — its row must go while the set stays on the **Pin sets** screen, where **Hide** / **Show** still work.
+6. **Selection:** click rows (toggles), shift-click (range), "Select all filtered".
+7. **The §4 index-shift test:** create 5 pins (`New pin...`), select #1/#3/#5, Delete → confirm — #2/#4 must survive. Restore from bin afterwards.
+8. **Bulk edit:** filter to an icon, select all filtered, Set color → preview shows before→after → confirm. Then "Undo last bulk".
+9. **Row actions:** Edit (opens the vanilla waypoint dialog — it must appear *in front of* the Pin Matrix window, with typing landing in its title box immediately), Map (centers the world map), Move (re-creates at new coords), Share (chat/clipboard sharing), double-click row = show on map.
+10. **Export/Import:** export all, then re-import the same file — everything should be skipped as duplicates.
+11. **Share:** row Share button → "Send to chat" posts the share line and (because your own client also runs Pin Matrix) a clickable "[Pin Matrix] Click here to add..." line should follow it — clicking shows the vanilla confirm prompt and re-creates the pin (a duplicate, since you already own it — delete it after). "Copy command" → paste into Notepad/Discord, then paste into the chat box and send — same pin appears.
 
 ## Implementation notes / deviations from spec
 
@@ -124,13 +125,29 @@ pre-release checklist for what the server can't see:
      frame rate (it draws grid *lines* plus fills only for blocked/hovered cells — 42 draw calls,
      not 800). While dragging, the magenta outline must preview where the window will actually
      land, not just the cell under the cursor.
-   - **Tab row:** set **Tab row** to a row index, drop two or three small windows on it, and
-     confirm they spread evenly across the full width like tabs and re-space when one is added or
-     removed. Dropping on a different column must change their order, not their position.
+   - **Tab row:** switch **Buttons** to Tab row and drag the Pin Matrix bar onto a row — it must
+     stretch right across that row, aligned to the grid, with its buttons spread evenly, and follow
+     you to whichever row you drop it on next. Windows dropped on that same row must snap to the
+     cell they were dropped on like anywhere else.
+   - **Pin-set panel:** it must open as a thin pull against the map's right edge, not a full
+     column. Click the pull: the list slides open; click again: it shuts. Reopen the map and
+     confirm it came back the way you left it. Toggle a set off and confirm the pull re-colours
+     while shut. No drag handle when the zones are shown, and no snapping. Change GUI scale with
+     the map open and confirm the whole assembly moves with the map's edge.
+   - **Map layer tab:** open the map and confirm the left-hand tab strip reads **Translocator
+     paths**, not `maplayer-pinmatrixtl`.
    - Change GUI scale, then font size, then resolution (or dock/undock). Snapped windows must
      re-derive into the same cells rather than drift or land off-screen.
+   - **The tab row refuses other windows.** In tab-row mode, drag another mod's window over the
+     tinted row: the cell must go red and the drop must be refused with a chat line saying why —
+     the bar is stretched across that row and sits above the map dialog, so anything landing there
+     would be underneath it and unclickable. Then drop the *bar* on a row that already holds a
+     snapped window: that window must be released back to its own mod's position, with a chat line
+     naming it.
    - **Recovery:** snap the Pin Matrix window somewhere awkward, then run `.pinmatrix resetlayout`
      from chat — everything returns and `dialogPositions` in `clientsettings.json` empties out.
+     `.pinmatrix unsnap` with no name lists the snapped windows; with one (`.pinmatrix unsnap
+     prospect`, matched case-insensitively on any part of the name) it releases just that one.
    - Confirm nothing is stolen: with the overlay held, clicking and typing in other mods' panels
      must behave exactly as it does with the overlay hidden (the overlay declines mouse events
      outright, so this is a check that it still does).
@@ -185,11 +202,18 @@ move counts as a possible hop), `TranslocatorDedupeRadius` (6), `TranslocatorMar
 `TranslocatorMarkerPinned` (false), `TranslocatorMarkerColor` (`#8A6FE8`), `TranslocatorRecentColor` (`#00E5FF`),
 `TranslocatorRecentMinutes` (20, 0 = never highlight) and `TranslocatorLineThickness` (2.5 px).
 
+Pin sets (1.6.0): `PinSets` (empty) — saved filters, each with `Name`, `Search`, `Icons`, `Colors`, `PinnedOnly`,
+`ShowButton` (true — whether it gets a row in the map's pin-set panel) and `ButtonIcon` (empty = a plain colour
+chip; a waypoint icon code = that icon, drawn in colour while any of the set's pins are visible and greyed once
+they are all hidden). Edited from the editor's **Pin sets** screen rather than by hand. The panel appears down the
+right of the world map as soon as one set exists, pages when there are more than fit, and can be dragged and
+snapped like any other window while **Layout Zones** is on. Capped at 24 (`MaxPinSets`).
+
 Window layout (1.5.0): `LayoutEnabled` (false — the feature and its map-screen **Layout Zones** button are
 opt-in; tick **Snap map-screen windows to a grid** on the editor's **Map options** screen), `LayoutCols` / `LayoutRows` (20 x 10, anything from 1 to 20 each
-way — the screen is split evenly by whatever you pick), `LayoutButtonRow` (-1 = none; set it to a row index to
-make that row a tab strip, where everything dropped on it is spread evenly across the full width and the column
-you drop on only decides the order),
+way — the screen is split evenly by whatever you pick), (in tab-row mode the strip is the row your Pin Matrix
+button bar is snapped to — drag the bar onto a row and everything else dropped there spreads evenly along it, the
+column you drop on deciding only the order; there is no row number to set),
 `LayoutZonePadding` (6 unscaled px of gap around each zone), `LayoutAvoidHuds` (true — disables grid cells a
 HUD is sitting in so snapped windows never cover one; untick to use the whole screen),
 `LayoutHudCoverageThreshold` (25 — percent of a cell a HUD must cover before that cell is disabled; any-overlap

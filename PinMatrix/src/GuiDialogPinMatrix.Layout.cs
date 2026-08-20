@@ -75,33 +75,23 @@ namespace PinMatrix
             // ---- button placement
             c.AddStaticText("Buttons", font, EB(4, y + 4, 74, 25));
             c.AddSmallButton(ButtonModeLabel(), OnCycleButtonMode, EB(82, y, 180, 28));
-            c.AddStaticText("Tab row", font, EB(274, y + 4, 74, 25));
-            c.AddNumberInput(EB(352, y, 50, 28), OnButtonRowChanged, font, "layoutbuttonrow");
-            c.AddStaticText("Cell", font, EB(414, y + 4, 46, 25));
-            c.AddNumberInput(EB(462, y, 50, 28), OnButtonColChanged, font, "layoutbuttoncol");
-            c.AddNumberInput(EB(518, y, 50, 28), OnButtonCellRowChanged, font, "layoutbuttoncellrow");
+            c.AddStaticText("Cell", font, EB(274, y + 4, 46, 25));
+            c.AddNumberInput(EB(322, y, 50, 28), OnButtonColChanged, font, "layoutbuttoncol");
+            c.AddNumberInput(EB(378, y, 50, 28), OnButtonCellRowChanged, font, "layoutbuttoncellrow");
             c.AddHoverText(
                 "How the Pin Matrix map-screen buttons are packaged.  "
                 + "Stacked: one window, buttons in a column, snapped to the Cell on the right.  "
                 + "Parallel: the same window with its buttons side by side.  "
-                + "Tab row: one bar stretched right across the row numbered beside it, buttons spread evenly.  "
+                + "Tab row: one window stretched right across the row you drag it to, buttons spread evenly.  "
                 + "Floating: a window per button, each placed and snapped on its own.  "
                 + "Show the zones and every window grows a drag handle; hide the zones and they are "
                 + "plain buttons again, right where you left them.",
                 tip, 360, EB(4, y, 258, 28).FlatCopy(), "tipbuttons");
             c.AddHoverText(
-                "Which row is a tab strip. This is a property of the row, not of any one window: "
-                + "drop ANY window on the nominated row and it spreads into an even slot along the "
-                + "full width instead of sitting in the single cell you dropped it on, re-spacing "
-                + "itself as things join and leave. The column you drop on sets the order along the "
-                + "strip. Dragging cannot express this on its own — it says where one window goes, "
-                + "not that a whole row has changed meaning. -1 = no strip.",
-                tip, 340, EB(274, y, 128, 28).FlatCopy(), "tiptabrow");
-            c.AddHoverText(
                 "Column and row of the cell the button window anchors to in Stacked and Parallel "
                 + "modes. Dragging the window somewhere overrides this, so it is the starting point "
                 + "rather than the last word.",
-                tip, 320, EB(414, y, 154, 28).FlatCopy(), "tipbuttoncell");
+                tip, 320, EB(274, y, 154, 28).FlatCopy(), "tipbuttoncell");
             y += 42;
 
             c.AddInset(EB(4, y, DW - 8, 2), 2);
@@ -141,7 +131,7 @@ namespace PinMatrix
         {
             if (Layout == null) return "Layout system unavailable.";
             var g = Layout.Grid;
-            string dock = config.LayoutButtonMode == "row" ? $"tab row {config.LayoutButtonRow}"
+            string dock = config.LayoutButtonMode == "row" ? $"tab row {Layout.ButtonRowIndex}"
                         : config.LayoutButtonMode == "cell" ? $"cell {config.LayoutButtonCol},{config.LayoutButtonCellRow}"
                         : "floating";
             // Kept terse deliberately: this sits in a fixed box, and a status line that grows with
@@ -160,7 +150,6 @@ namespace PinMatrix
             c.GetNumberInput("layoutcols").SetValue(config.LayoutCols.ToString(CultureInfo.InvariantCulture));
             c.GetNumberInput("layoutrows").SetValue(config.LayoutRows.ToString(CultureInfo.InvariantCulture));
             c.GetNumberInput("layoutthreshold").SetValue(config.LayoutHudCoverageThreshold.ToString(CultureInfo.InvariantCulture));
-            c.GetNumberInput("layoutbuttonrow").SetValue(config.LayoutButtonRow.ToString(CultureInfo.InvariantCulture));
             c.GetNumberInput("layoutbuttoncol").SetValue(config.LayoutButtonCol.ToString(CultureInfo.InvariantCulture));
             c.GetNumberInput("layoutbuttoncellrow").SetValue(config.LayoutButtonCellRow.ToString(CultureInfo.InvariantCulture));
         }
@@ -240,10 +229,6 @@ namespace PinMatrix
                 default: config.LayoutButtonMode = "stacked"; break;
             }
 
-            if (config.LayoutButtonMode == "row" && config.LayoutButtonRow < 0)
-            {
-                config.LayoutButtonRow = Math.Max(0, config.LayoutRows - 1);
-            }
             SaveLayoutConfig(true);
             ModSystem?.RefreshButtonPlacement();
             Recompose();
@@ -264,17 +249,6 @@ namespace PinMatrix
             if (int.TryParse(t, NumberStyles.Integer, CultureInfo.InvariantCulture, out int v) && v >= 0)
             {
                 config.LayoutButtonCellRow = v;
-                SaveLayoutConfig(true);
-            }
-        }
-
-        void OnButtonRowChanged(string t)
-        {
-            // Accepts -1, so this cannot use the "> 0" guard the size inputs use.
-            if (int.TryParse(t, NumberStyles.Integer | NumberStyles.AllowLeadingSign,
-                             CultureInfo.InvariantCulture, out int v))
-            {
-                config.LayoutButtonRow = v;
                 SaveLayoutConfig(true);
             }
         }

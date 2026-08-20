@@ -167,10 +167,21 @@ namespace PinMatrix
                     int col = hoverCol, row = hoverRow;
                     capi.Event.RegisterCallback(_ =>
                     {
-                        if (!layout.Snap(target, col, row))
+                        // One rule, one wording: the refusal the player reads is the same string the
+                        // cell was painted red from, so the grid can never look droppable and then
+                        // refuse without saying why.
+                        string why = layout.WhyCannotSnap(target, col, row);
+                        if (why != null)
                         {
-                            capi.ShowChatMessage("[Pin Matrix] That zone is disabled because a HUD is there. "
-                                + "Untick \"Do not cover HUDs\" on the Map windows layout screen to use it anyway.");
+                            capi.ShowChatMessage("[Pin Matrix] " + why);
+                            return;
+                        }
+
+                        layout.Snap(target, col, row);
+                        foreach (var evicted in layout.LastSnapEvicted)
+                        {
+                            capi.ShowChatMessage("[Pin Matrix] Released \"" + evicted + "\" — the tab row is the "
+                                + "button bar's, so it is back where its own mod put it.");
                         }
                     }, 0);
                 }
@@ -195,7 +206,7 @@ namespace PinMatrix
             // Drawn as a lattice, not as one quad per cell. At 20x20 that is 400 cells; a fill plus
             // an outline each would be 800 draw calls every frame. Lines are 42, and a fine grid
             // reads better as a lattice anyway. Only the cells that mean something get filled:
-            // blocked ones, the dock row, and the landing preview.
+            // blocked ones, the tab row, and the landing preview.
             for (int col = 0; col <= grid.Cols; col++)
             {
                 float x = (float)(col * grid.CellW * scale);
@@ -207,12 +218,12 @@ namespace PinMatrix
                 capi.Render.RenderRectangle(0, y, 150f, screenW, 1, GridLineColor);
             }
 
-            // The dock row gets a standing tint so it is obvious which row spreads things out — but
-            // only while it is actually being used as one. Tinting it in the other modes advertises
+            // The tab row gets a standing tint so it is obvious which row the button bar spans —
+            // but only while tab-row mode is actually on. Tinting it in the other modes advertises
             // behaviour that is not switched on.
-            if (layout.ButtonRowActive && config.LayoutButtonRow < grid.Rows)
+            if (layout.ButtonRowActive && layout.ButtonRowIndex < grid.Rows)
             {
-                float y = (float)(config.LayoutButtonRow * grid.CellH * scale);
+                float y = (float)(layout.ButtonRowIndex * grid.CellH * scale);
                 float h = (float)(grid.CellH * scale);
                 capi.Render.Render2DTexturePremultipliedAlpha(whiteTexId, 0, y, screenW, h, 149f,
                     Premultiplied(0.55f, 0.45f, 0.95f, 0.10f));
@@ -236,7 +247,12 @@ namespace PinMatrix
 
             if (hoverCol < 0 || hoverRow < 0) return;
 
-            bool hoverBlocked = avoiding && layout.IsBlocked(hoverCol, hoverRow);
+            // Painted from the same rule the drop is judged by, so a refusing cell always looks
+            // refusing. With nothing being dragged there is no window to judge, so it falls back to
+            // the standing HUD tint.
+            bool hoverBlocked = dragging != null
+                ? layout.WhyCannotSnap(dragging, hoverCol, hoverRow) != null
+                : avoiding && layout.IsBlocked(hoverCol, hoverRow);
             var hover = grid.Cell(hoverCol, hoverRow);
             capi.Render.Render2DTexturePremultipliedAlpha(whiteTexId,
                 (float)(hover.X * scale), (float)(hover.Y * scale),

@@ -1,5 +1,6 @@
 using System;
 using System.Globalization;
+using System.Linq;
 using Cairo;
 using Vintagestory.API.Client;
 using Vintagestory.API.Common;
@@ -356,6 +357,7 @@ namespace PinMatrix
             Layout?.Invalidate();
             ModSystem?.RefreshButtonPlacement();
             if (!on) ModSystem?.SetLayoutPinned(false);
+
         }
 
         void OnTlPathsToggled(bool on)
