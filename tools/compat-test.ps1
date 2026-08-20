@@ -1,4 +1,4 @@
-# Regression guard for inter-mod compatibility. Boots a headless Vintage Story server for
+﻿# Regression guard for inter-mod compatibility. Boots a headless Vintage Story server for
 # each mod combination and fails on any [Error]/[Warning] in the server log or any missing/
 # unexpected marker.
 #
@@ -32,6 +32,10 @@
 # Delete the cache to re-source (e.g. after updating your live mods).
 param(
     [switch]$SkipBuild,
+    # Build and pack the zip, then stop. The boot matrix now runs before a push rather than before
+    # every commit, so this is how you get a fresh dist zip to drop into a live Mods folder while
+    # iterating - packing is a few seconds, the matrix is several minutes.
+    [switch]$PackOnly,
     [string]$ServerExe = "$env:APPDATA\Vintagestory\VintagestoryServer.exe",
     [int]$BootTimeoutSec = 180
 )
@@ -39,8 +43,6 @@ $ErrorActionPreference = "Stop"
 $root = Split-Path $PSScriptRoot -Parent
 $cache = "$PSScriptRoot\compat-cache"
 New-Item -ItemType Directory -Force $cache | Out-Null
-
-if (-not (Test-Path $ServerExe)) { throw "Server exe not found: $ServerExe" }
 
 $version = (Get-Content "$root\PinMatrix\modinfo.json" -Raw | ConvertFrom-Json).version
 $ourZip = "$root\dist\pinmatrix_$version.zip"
@@ -65,6 +67,15 @@ if (-not $SkipBuild) {
     Compress-Archive -Path "$staging\*" -DestinationPath $ourZip -Force
 }
 if (-not (Test-Path $ourZip)) { throw "Mod zip not found: $ourZip" }
+
+if ($PackOnly) {
+    Write-Host "PACKED $ourZip ($((Get-Item $ourZip).Length) bytes)"
+    exit 0
+}
+
+# Checked here, not at the top: packing a zip does not need a server, and -PackOnly should
+# work on a machine that has never had one installed.
+if (-not (Test-Path $ServerExe)) { throw "Server exe not found: $ServerExe" }
 
 # Fetch a companion mod zip: cache -> live Mods folder -> mod DB API (latest release)
 function Get-CompatMod([string]$modid, [string]$filePattern) {

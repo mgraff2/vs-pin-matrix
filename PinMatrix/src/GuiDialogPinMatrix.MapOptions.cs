@@ -101,11 +101,17 @@ namespace PinMatrix
                     // A dropdown of drawn colours, not a hex box. The swatch that used to sit beside
                     // the box is gone with it: the dropdown paints the colour on every entry and on
                     // the closed control, so a separate chip would be the same fact twice.
+                    // Wide enough for the whole entry. A dropdown shows the selected label inside
+                    // itself, and the longest one here is swatch + hex + "(default)" — at the width
+                    // this started at, every row was cut off mid-word.
+                    //
+                    // The per-row Reset buttons are gone: nine of them to undo nine choices, when
+                    // picking the entry marked (default) already does exactly that for one row and
+                    // "Reset all colours" does it for the lot.
                     string[] vals = TraderColorValues(role);
                     c.AddDropDown(vals, ColorLabels(vals, DefaultTraderColor(role)),
                         Math.Max(0, Array.IndexOf(vals, NormHex(TraderColorHex(role)))),
-                        MakeTraderColorHandler(role), EB(cx + 186, ry, 140, 26), "tcol_" + role);
-                    c.AddSmallButton("Reset", MakeTraderColorReset(role), EB(cx + 334, ry, 74, 26), EnumButtonStyle.Small);
+                        MakeTraderColorHandler(role), EB(cx + 186, ry, 250, 26), "tcol_" + role);
                 }
                 y += TraderGridRows * TraderRowH + 4;
 
@@ -137,25 +143,33 @@ namespace PinMatrix
             c.AddHoverText("A hop you just took is drawn in the Recent colour until this runs out, then "
                 + "reverts. 0 never highlights.",
                 tip, 300, EB(376, y, 302, 28).FlatCopy(), "tiptlrecent");
+
+            // Up here because the colour row below needs its width for two dropdowns, and this row
+            // had 200px going spare.
+            c.AddSmallButton("Adopt TL waypoints...", OnAdoptTlWaypoints, EB(686, y, 200, 28), EnumButtonStyle.Small);
+            c.AddHoverText("Converts translocator markers left behind by another tool into Pin Matrix "
+                + "path markers. Always previewed first — only titles, icons and colours change.",
+                tip, 300, EB(686, y, 200, 28).FlatCopy(), "tipadopt");
             y += 34;
 
             // Chips beside the hex boxes, the same as the trader rows above — without one, a hex
             // field does not read as a colour control at all.
+            // Drawn colours, like the trader rows and the Herty cup row. These were the last two
+            // hex boxes on the screen.
             c.AddStaticText("Path colour", font, EB(36, y + 4, 110, 25));
-            c.AddDynamicCustomDraw(EB(150, y + 1, 26, 26), (ctx, s, b) => DrawTlSwatch(ctx, false), TlSwatchKey(false));
-            c.AddTextInput(EB(180, y, 96, 26), OnTlColorChanged, font, "tlcolor");
-            c.AddStaticText("Recent", font, EB(292, y + 4, 64, 25));
-            c.AddDynamicCustomDraw(EB(360, y + 1, 26, 26), (ctx, s, b) => DrawTlSwatch(ctx, true), TlSwatchKey(true));
-            c.AddTextInput(EB(390, y, 96, 26), OnTlRecentColorChanged, font, "tlrecentcolor");
+            string[] tlVals = TlColorValues(false);
+            c.AddDropDown(tlVals, ColorLabels(tlVals, DefaultTlColor(false)),
+                Math.Max(0, Array.IndexOf(tlVals, NormHex(config.TranslocatorMarkerColor))),
+                OnTlColorChanged, EB(150, y, 230, 26), "tlcolor");
+            c.AddStaticText("Recent", font, EB(388, y + 4, 64, 25));
+            string[] tlRecentVals = TlColorValues(true);
+            c.AddDropDown(tlRecentVals, ColorLabels(tlRecentVals, DefaultTlColor(true)),
+                Math.Max(0, Array.IndexOf(tlRecentVals, NormHex(config.TranslocatorRecentColor))),
+                OnTlRecentColorChanged, EB(456, y, 230, 26), "tlrecentcolor");
             c.AddHoverText("The colour of the pad markers and the line between them, and the colour a "
-                + "hop is drawn in just after you take it. Six hex digits; the chip beside each box "
-                + "updates as you type.",
-                tip, 320, EB(36, y, 450, 26).FlatCopy(), "tiptlcolours");
-            c.AddSmallButton("Reset colours", OnResetTlColors, EB(496, y, 140, 26), EnumButtonStyle.Small);
-            c.AddSmallButton("Adopt TL waypoints...", OnAdoptTlWaypoints, EB(646, y, 220, 26), EnumButtonStyle.Small);
-            c.AddHoverText("Converts translocator markers left behind by another tool into Pin Matrix "
-                + "path markers. Always previewed first — only titles, icons and colours change.",
-                tip, 300, EB(646, y, 220, 26).FlatCopy(), "tipadopt");
+                + "hop is drawn in just after you take it.",
+                tip, 320, EB(36, y, 650, 26).FlatCopy(), "tiptlcolours");
+            c.AddSmallButton("Reset colours", OnResetTlColors, EB(694, y, 130, 26), EnumButtonStyle.Small);
             y += 34;
 
             c.AddSwitch(OnTlAntsToggled, EB(4, y, 26, 26), "tlants", 23, 3);
@@ -309,14 +323,7 @@ namespace PinMatrix
             }
         }
 
-        void DrawHertyCupSwatch(Context ctx) =>
-            PaintChip(ctx, TraderMarkers.ParseHex(config.HertyCupMarkerColor), GuiElement.scaled(2));
 
-        void DrawTlSwatch(Context ctx, bool recent)
-        {
-            string hex = recent ? config.TranslocatorRecentColor : config.TranslocatorMarkerColor;
-            PaintChip(ctx, TraderMarkers.ParseHex(hex), GuiElement.scaled(2));
-        }
 
         string TraderColorHex(string role)
         {
@@ -455,8 +462,8 @@ namespace PinMatrix
             c.GetSwitch("tlenabled").SetValue(config.TranslocatorPathsEnabled);
             c.GetNumberInput("tlrecentmins").SetValue(
                 config.TranslocatorRecentMinutes.ToString("0.#", CultureInfo.InvariantCulture));
-            c.GetTextInput("tlcolor")?.SetValue(config.TranslocatorMarkerColor);
-            c.GetTextInput("tlrecentcolor")?.SetValue(config.TranslocatorRecentColor);
+            c.GetDropDown("tlcolor")?.SetSelectedValue(NormHex(config.TranslocatorMarkerColor));
+            c.GetDropDown("tlrecentcolor")?.SetSelectedValue(NormHex(config.TranslocatorRecentColor));
             c.GetSwitch("layoutautoscale")?.SetValue(config.LayoutAutoScale);
             c.GetSwitch("hcenabled")?.SetValue(config.HertyCupMarkersEnabled);
             c.GetDropDown("hccolor")?.SetSelectedValue(NormHex(config.HertyCupMarkerColor));
@@ -533,14 +540,6 @@ namespace PinMatrix
             if (hex == NormHex(DefaultTraderColor(role))) config.TraderMarkerColors.Remove(role);
             else config.TraderMarkerColors[role] = hex;
             SaveMapOptionsConfig();
-        };
-
-        ActionConsumable MakeTraderColorReset(string role) => () =>
-        {
-            config.TraderMarkerColors.Remove(role);
-            SaveMapOptionsConfig();
-            SingleComposer?.GetDropDown("tcol_" + role)?.SetSelectedValue(NormHex(TraderColorHex(role)));
-            return true;
         };
 
         bool OnResetAllTraderColors()
@@ -662,8 +661,30 @@ namespace PinMatrix
             SaveMapOptionsConfig();
         }
 
-        void OnTlColorChanged(string t) => SetHexIfComplete(t, h => config.TranslocatorMarkerColor = h);
-        void OnTlRecentColorChanged(string t) => SetHexIfComplete(t, h => config.TranslocatorRecentColor = h);
+        string DefaultTlColor(bool recent)
+        {
+            var d = new PinMatrixConfig();
+            return recent ? d.TranslocatorRecentColor : d.TranslocatorMarkerColor;
+        }
+
+        string[] TlColorValues(bool recent) => ColorChoices(DefaultTlColor(recent),
+            recent ? config.TranslocatorRecentColor : config.TranslocatorMarkerColor);
+
+        void OnTlColorChanged(string code, bool selected)
+        {
+            string hex = NormHex(code);
+            if (hex == null) return;
+            config.TranslocatorMarkerColor = hex;
+            SaveMapOptionsConfig();
+        }
+
+        void OnTlRecentColorChanged(string code, bool selected)
+        {
+            string hex = NormHex(code);
+            if (hex == null) return;
+            config.TranslocatorRecentColor = hex;
+            SaveMapOptionsConfig();
+        }
 
         /// <summary>
         /// Commits a hex colour only once it is complete. These fire on every keystroke, so
@@ -684,8 +705,8 @@ namespace PinMatrix
             config.TranslocatorMarkerColor = defaults.TranslocatorMarkerColor;
             config.TranslocatorRecentColor = defaults.TranslocatorRecentColor;
             SaveMapOptionsConfig();
-            SingleComposer?.GetTextInput("tlcolor")?.SetValue(config.TranslocatorMarkerColor);
-            SingleComposer?.GetTextInput("tlrecentcolor")?.SetValue(config.TranslocatorRecentColor);
+            SingleComposer?.GetDropDown("tlcolor")?.SetSelectedValue(NormHex(config.TranslocatorMarkerColor));
+            SingleComposer?.GetDropDown("tlrecentcolor")?.SetSelectedValue(NormHex(config.TranslocatorRecentColor));
             return true;
         }
 
