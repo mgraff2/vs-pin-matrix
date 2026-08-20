@@ -124,7 +124,9 @@ namespace PinMatrix
                 int hidden = SetsService.HiddenCount(set);
 
                 c.AddStaticText(set.Name, font, EB(4, y + 6, 190, 26));
-                c.AddStaticText(set.CriteriaSummary(), tip, EB(198, y + 7, 300, 26));
+                // Rich text, not static: the colour criteria are drawn as swatches. A set that
+                // filters on colour is unreadable as hex — see PinSet.CriteriaSummaryVtml.
+                c.AddRichtext(set.CriteriaSummaryVtml(), tip, EB(198, y + 7, 300, 26));
                 c.AddStaticText(total == 0 ? "no pins" : $"{total} pins, {hidden} hidden", tip, EB(502, y + 7, 130, 26));
 
                 c.AddSmallButton("Hide", () => { ApplySetFromScreen(id, true); return true; }, EB(628, y, 56, 26), EnumButtonStyle.Small);

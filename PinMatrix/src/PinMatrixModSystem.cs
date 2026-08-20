@@ -23,6 +23,7 @@ namespace PinMatrix
         ChatShareLinks chatShareLinks;
         LayoutManager layout;
         TraderMarkers traders;
+        HertyCupMarkers hertyCups;
         TranslocatorPaths tlPaths;
         HudLayoutOverlay layoutOverlay;
         WaypointVisibilityRenderer visibilityRenderer;
@@ -58,6 +59,9 @@ namespace PinMatrix
             capi.Input.SetHotKeyHandler("pinmatrix", OnHotkey);
 
             layout = new LayoutManager(capi, config, () => capi.StoreModConfig(config, "pinmatrix.json"));
+            // So a GUI scale the player sets in vanilla's own settings becomes the reference auto-fit
+            // measures from, instead of being quietly undone by the next resolution change.
+            layout.WatchGuiScale();
             RegisterCommands();
 
             // The mod's only registration into another system's list. Safe here: WorldMapManager
@@ -176,6 +180,9 @@ namespace PinMatrix
             }
             // Cheap and returns immediately while trader auto-marking is switched off.
             EnsureTraders().Scan();
+            // Nothing to scan for cups — both triggers are events. This is only here so the hooks
+            // exist from the first tick of a world rather than from whenever something asks.
+            EnsureHertyCups();
 
             var mapManager = capi.ModLoader.GetModSystem<WorldMapManager>();
             var mapDlg = mapManager?.worldMapDlg;
@@ -295,9 +302,15 @@ namespace PinMatrix
             System.Func<PmButton, Action> actionFor = which =>
                 which == PmButton.Editor ? (Action)OpenFromMapButton
                 : which == PmButton.Zones ? (Action)ToggleLayoutZones
+                : which == PmButton.RescanHuds ? (Action)RescanHudsFromTools
+                : which == PmButton.ResetLayout ? (Action)ResetLayoutFromTools
+                : which == PmButton.Rescue ? (Action)RescueFromTools
                 : (Action)OpenLayoutOptions;
 
-            var all = new[] { PmButton.Editor, PmButton.Zones, PmButton.Options };
+            // The permanent stack, and only the permanent stack. Layout Options used to live here,
+            // which meant turning the zones on and off resized the bar under the player's cursor —
+            // and in tab-row mode re-stretched it across the row mid-arrangement.
+            var all = new[] { PmButton.Editor, PmButton.Zones };
 
             if (mode == "float")
             {
@@ -315,8 +328,35 @@ namespace PinMatrix
                     all, horizontal, actionFor, zonesVisible, layoutModeOn));
             }
 
+            // The layout tools: one floating window, the same in every button mode, holding
+            // everything that only means something while the grid is up. It empties itself when the
+            // zones go — VisibleButtons drops every LayoutOnly button, and a window with no buttons
+            // composes to nothing — so it appears and vanishes with them without any open/close
+            // bookkeeping of its own.
+            var tools = new HudPinMatrixButtonWindow(capi, config, LayoutToolsDialogName,
+                new[] { PmButton.Options, PmButton.RescanHuds, PmButton.ResetLayout, PmButton.Rescue },
+                false, actionFor, zonesVisible, layoutModeOn);
+            tools.Snappable = false;
+            tools.TitleBarText = "Layout Zones";
+            // Its own corner. The default right-edge stack is where the permanent buttons live, and
+            // the right of the screen is also where the pin-set panel parks; the left is free
+            // because the full map is nudged that way. Only a default — one drag and it is the
+            // player's, and PositionButtons will not touch it again.
+            tools.SetPosition(24, 140);
+            buttons.Add(tools);
+
+            // Floating mode used to give Layout Options a window of its own; it is a tool now and
+            // lives with the others. Drop any zone an older config remembers for that window, or it
+            // stays in the assignment list forever, naming a window that no longer exists.
+            layout.Unsnap("pinmatrix-btn-options");
+
             foreach (var b in buttons)
             {
+                // Closing any of these title bars leaves layout mode. Deferred out of the click the
+                // same way the overlay defers a snap: this tears down the overlay and recomposes
+                // every button window, and doing that from inside a GUI event is the kind of thing
+                // that works until it does not.
+                b.OnTitleBarClose = () => capi.Event.RegisterCallback(_ => SetLayoutPinned(false), 0);
                 layout.OwnDialogs.Add(b);
                 layout.SelfPlaced.Add(b.DialogName);
                 // Hiding the zones is exactly "the player has stopped arranging", which is what
@@ -383,6 +423,16 @@ namespace PinMatrix
             {
                 if (!b.IsOpened()) continue;
 
+                // The tools window answers to nothing but the player. No mode, no zone, no cell —
+                // it opted out of snapping, so the only position it can have is one it was dragged
+                // to, or the default it was created with.
+                if (!b.Snappable)
+                {
+                    b.SetStretchWidth(0);
+                    if (b.TryGetPlayerPosition(out int tx, out int ty)) b.SetPosition(tx, ty);
+                    continue;
+                }
+
                 // A window the player has actually dragged into a zone keeps that zone, whatever the
                 // mode would otherwise dictate. Snapping is a deliberate act; a mode default is not.
                 var snapped = layout.Find(b.DialogName);
@@ -409,29 +459,39 @@ namespace PinMatrix
                     // the two have to agree or the bar lands one padding short of the row it was
                     // asked to fill.
                     b.SetStretchWidth(strip.W - 8);
-                    b.SetPosition(strip.X, strip.Y);
-                }
-                else if (mode == "stacked" || mode == "parallel")
-                {
-                    // Snapped to a cell like any other window, and draggable while the grid is up,
-                    // so a position the player dragged it to wins over the configured cell. It has
-                    // to be *their* position, not merely a stored one — layout mode seeds a stored
-                    // position to make the title bar draggable at all, and treating that as a
-                    // placement would stop the Cell setting working the moment the grid was shown.
-                    b.SetStretchWidth(0);
-                    if (b.TryGetPlayerPosition(out int sx, out int sy)) b.SetPosition(sx, sy);
-                    else
+
+                    // NOT while the mouse is down. This branch runs every watcher tick and forces the
+                    // bar back onto its strip, which in tab-row mode meant a drag was undone before
+                    // anything could see it: HudLayoutOverlay.TrackDrag decides something is being
+                    // dragged by comparing composer positions against an at-press baseline, and the
+                    // position was reset to the baseline between every pair of samples. So the bar
+                    // could never be moved to another row - the drop was never even detected, which
+                    // is why dragging it appeared to do nothing at all.
+                    //
+                    // Letting go of it for the duration of the press is enough: the overlay sees the
+                    // movement, the release snaps it to the row under the pointer, ButtonRowIndex
+                    // reads that row back from the new assignment, and the next tick re-places the
+                    // bar across the strip it now belongs to.
+                    if (!capi.Input.MouseButton.Left)
                     {
-                        var cell = layout.OwnButtonCell();
-                        // Both windows are configured to the same cell, so the sets window starts
-                        // just clear of the fixed one instead of underneath it. Only until it is
-                        // dragged — a player position wins above, and the grid is right there.
-                        b.SetPosition(cell.X, cell.Y);
+                        // Store first, position second. SetPosition recomposes, and the title bar
+                        // restores from the store during that compose — so the store has to already
+                        // name the strip or it drags the bar straight back to where it was dropped.
+                        b.PinPositionForTitleBar(strip.X, strip.Y);
+                        b.SetPosition(strip.X, strip.Y);
                     }
                 }
                 else
                 {
-                    // Separate windows are the player's to put anywhere; only restore what was saved.
+                    // Every other mode: the window is wherever the player dragged it, and nowhere
+                    // else. There is no configured cell to fall back to any more — a grid you drag
+                    // windows onto does not also need coordinates typed into it — so one nobody has
+                    // touched simply keeps the default corner it was built with.
+                    //
+                    // It has to be *their* position, not merely a stored one: layout mode seeds a
+                    // stored position to make the title bar draggable at all, and treating that seed
+                    // as a placement would freeze the window wherever it happened to be the first
+                    // time the grid was shown.
                     b.SetStretchWidth(0);
                     if (b.TryGetPlayerPosition(out int sx, out int sy)) b.SetPosition(sx, sy);
                 }
@@ -591,6 +651,26 @@ namespace PinMatrix
             return traders;
         }
 
+        /// <summary>
+        /// The Herty cup markers, hooked once and left hooked for the world's lifetime.
+        ///
+        /// Unlike the trader markers there is nothing to poll: both triggers are events, so this is
+        /// created eagerly rather than on first use. It has to be — a lazy Ensure would only run
+        /// once something else asked for it, and nothing else ever does. Both handlers return on
+        /// their first comparison while the feature is off, so an unhooked-looking cost is not worth
+        /// the two ways the subscription could then be out of step with the setting.
+        /// </summary>
+        HertyCupMarkers EnsureHertyCups()
+        {
+            EnsureServices();
+            if (hertyCups == null)
+            {
+                hertyCups = new HertyCupMarkers(capi, config, svc);
+                hertyCups.Hook();
+            }
+            return hertyCups;
+        }
+
         TranslocatorPaths EnsureTlPaths()
         {
             EnsureServices();
@@ -612,11 +692,42 @@ namespace PinMatrix
             dialog.Layout = layout;
             dialog.ModSystem = this;
             dialog.Traders = EnsureTraders();
+            dialog.HertyCups = EnsureHertyCups();
             dialog.TlPaths = EnsureTlPaths();
 
             // Our own windows are not obstacles to ourselves. Nothing is ever resized to fit a
             // zone, this window included — zones move things and leave their size alone.
             layout.OwnDialogs.Add(dialog);
+        }
+
+        /// <summary>Stable name of the floating layout-tools window.</summary>
+        public const string LayoutToolsDialogName = "pinmatrix-layouttools";
+
+        // The tools window's buttons, reported in chat rather than on the window: it is deliberately
+        // small, and a result printed on it would resize it under the cursor that just pressed it.
+
+        void RescanHudsFromTools()
+        {
+            if (layout == null) return;
+            layout.RecomputeBlocked();
+            capi.ShowChatMessage(
+                $"[Pin Matrix] {layout.StableHudCount} HUD rect(s) measured, {layout.BlockedCount} cell(s) disabled.");
+        }
+
+        void ResetLayoutFromTools()
+        {
+            if (layout == null) return;
+            int n = layout.ResetAll();
+            capi.ShowChatMessage($"[Pin Matrix] Cleared {n} remembered window zone(s).");
+        }
+
+        void RescueFromTools()
+        {
+            if (layout == null) return;
+            int n = layout.RescueOffscreen();
+            capi.ShowChatMessage(n == 0
+                ? "[Pin Matrix] Every open window is already on screen."
+                : $"[Pin Matrix] Brought {n} window(s) back on screen.");
         }
 
         void RegisterCommands()
@@ -655,6 +766,41 @@ namespace PinMatrix
                         // Line by line: a single multi-line chat message is truncated.
                         foreach (var line in layout.UnsnapMatching(query).Split('\n')) capi.ShowChatMessage(line.TrimEnd());
                         return TextCommandResult.Success();
+                    })
+                .EndSubCommand()
+
+                .BeginSubCommand("rescue")
+                    .WithDescription("Bring every off-screen window back into view")
+                    .HandleWith(_ =>
+                    {
+                        if (layout == null) return TextCommandResult.Error("Pin Matrix is not active.");
+                        int n = layout.RescueOffscreen();
+                        return TextCommandResult.Success(n == 0
+                            ? "[Pin Matrix] Every open window is already on screen."
+                            : $"[Pin Matrix] Brought {n} window(s) back on screen.");
+                    })
+                .EndSubCommand()
+
+                .BeginSubCommand("guiscale")
+                    .WithDescription("Show or set the game's GUI scale: .pinmatrix guiscale [0.5-3]")
+                    .WithArgs(capi.ChatCommands.Parsers.OptionalFloat("scale"))
+                    .HandleWith(args =>
+                    {
+                        if (layout == null) return TextCommandResult.Error("Pin Matrix is not active.");
+                        if (args.ArgCount == 0 || args[0] == null)
+                        {
+                            return TextCommandResult.Success(
+                                $"[Pin Matrix] GUI scale is {RuntimeEnv.GUIScale:0.###} at "
+                                + $"{capi.Render.FrameWidth}x{capi.Render.FrameHeight}.");
+                        }
+
+                        // The chat route exists for the case the screens themselves cannot be read or
+                        // reached — which is the whole problem this feature is about — so it sets the
+                        // reference too, exactly as moving the slider does.
+                        double v = layout.ClampStep(LayoutManager.ScaleToStep((float)args[0])) / 8.0;
+                        layout.SetGuiScale(v);
+                        layout.CaptureScaleBase();
+                        return TextCommandResult.Success($"[Pin Matrix] GUI scale set to {v:0.###}.");
                     })
                 .EndSubCommand()
 
@@ -745,10 +891,13 @@ namespace PinMatrix
             buttons.Clear();
             layoutOverlay?.Dispose();
             layoutOverlay = null;
+            layout?.StopWatchingGuiScale();
             layout = null;
             // Rebuilt on the next world: the hidden-pin list is per savegame
             visibility = null;
             traders = null;
+            hertyCups?.Unhook();
+            hertyCups = null;
             tlPaths = null;
             TranslocatorPathLayer.Service = null;
             svc = null;

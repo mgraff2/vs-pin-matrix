@@ -48,11 +48,12 @@ namespace PinMatrix
     /// </summary>
     public class ZoneGrid
     {
-        // Free choice up to 20 each way — 3x3 or 20x20, whatever the player picks, split evenly.
+        // Free choice up to 50 each way — 3x3 or 50x50, whatever the player picks, split evenly.
         // A fine lattice is a positioning grid rather than a set of drop targets, and the overlay
-        // draws it as lines rather than one quad per cell, so the count costs nothing to render.
-        public const int MaxCols = 20;
-        public const int MaxRows = 20;
+        // draws it as lines rather than one quad per cell (102 lines at the maximum, not 2500 quads),
+        // so the count costs nothing to render. The blocked-cell set is sparse for the same reason.
+        public const int MaxCols = 50;
+        public const int MaxRows = 50;
 
         public readonly int Cols, Rows;
         /// <summary>Screen size in unscaled units.</summary>

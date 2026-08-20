@@ -135,6 +135,109 @@ namespace PinMatrix
         /// <summary>Line thickness on the map, in pixels.</summary>
         public double TranslocatorLineThickness { get; set; } = 2.5;
 
+        /// <summary>
+        /// Draw a recently-used path as marching ants: alternating bands of
+        /// <see cref="TranslocatorRecentColor"/> and <see cref="TranslocatorMarkerColor"/> that
+        /// crawl from the hop's origin towards its destination.
+        ///
+        /// Two colours rather than colour-and-gap, because a gapped line disappears into busy
+        /// terrain at 2.5px. The second colour is the ordinary path colour on purpose: the recent
+        /// line then reads as one of the network rather than as an unrelated object. Set both
+        /// colours the same and the bands become invisible — the animation still runs, so that is
+        /// a way of switching the effect off by accident. The toggle is the way to mean it.
+        ///
+        /// Only recent paths are dashed. Old lines stay one quad each, so the cost of this scales
+        /// with the hop you care about and not with how many translocators you have ever used.
+        /// </summary>
+        public bool TranslocatorRecentAnts { get; set; } = true;
+
+        /// <summary>Width of one colour band, in screen pixels. A band pair is twice this.</summary>
+        public double TranslocatorAntsDashPx { get; set; } = 9;
+
+        /// <summary>
+        /// How fast the bands crawl, in screen pixels per second. Zero leaves them as static
+        /// stripes, which is the honest setting for anyone who finds movement on a map distracting
+        /// but still wants the hop to stand out.
+        /// </summary>
+        public double TranslocatorAntsSpeed { get; set; } = 16;
+
+        /// <summary>
+        /// Re-derive the game's GUI scale from the screen size when the screen size changes.
+        ///
+        /// THE PROBLEM THIS EXISTS FOR: nothing in the engine resizes a dialog, so a 900px window is
+        /// 900px whatever the screen is - a third of a 2560-wide screen and most of a 1280-wide one.
+        /// The only lever is the global GUI scale, four clicks deep in Settings. Anyone who moves
+        /// between a desk monitor and a remote session at a smaller resolution re-does that by hand
+        /// every single time.
+        ///
+        /// Off by default because it writes a *game* setting, not one of ours, and a mod quietly
+        /// changing the size of your entire interface had better be something you asked for.
+        /// </summary>
+        public bool LayoutAutoScale { get; set; } = false;
+
+        /// <summary>
+        /// The reference pairing auto-scale derives from: a GUI scale and the screen it was chosen on.
+        ///
+        /// NEVER derived from the *current* scale, always from this fixed pair. Scaling the current
+        /// value by a ratio compounds - bounce between two machines a few times and the size drifts
+        /// away from anything you chose. From a fixed base the answer is exact and round-trips
+        /// perfectly: base 1.0 at 2560x1440 gives 0.5 at 1280x720 and 1.0 again on return.
+        /// Re-captured whenever the player moves the scale slider themselves, because that is them
+        /// saying "this is the size I want, at this screen size". Zero means "not captured yet".
+        /// </summary>
+        public double LayoutBaseScale { get; set; } = 0;
+        public int LayoutBaseScreenW { get; set; } = 0;
+        public int LayoutBaseScreenH { get; set; } = 0;
+
+        // ------------------------------------------------------------------ herty cups
+
+        /// <summary>
+        /// Auto-mark a Herty cup when the player places one or collects from one.
+        ///
+        /// Off by default, like every other auto-marker here: waypoints appearing on someone's map
+        /// unasked is not a default. See <see cref="HertyCupMarkers"/> for why both triggers are
+        /// player interactions rather than a scan of nearby blocks — it is the only way a
+        /// client-only mod can tell your cups from everyone else's on a server.
+        /// </summary>
+        public bool HertyCupMarkersEnabled { get; set; } = false;
+
+        /// <summary>
+        /// Waypoint icon for cup markers. "vessel" is vanilla's little cracked pot, which is as close
+        /// as the game's own icon set gets to a resin pot on a tree. Pick another from the dropdown on
+        /// the Map options screen - it lists every icon the game has, drawn rather than named.
+        /// </summary>
+        public string HertyCupMarkerIcon { get; set; } = "vessel";
+
+        public bool HertyCupMarkerPinned { get; set; } = false;
+
+        /// <summary>Resin amber, far enough from the trader and translocator defaults to read apart.</summary>
+        public string HertyCupMarkerColor { get; set; } = "#C98B3A";
+
+        /// <summary>
+        /// Title prefix; the tapped tree's wood is appended when it can be read from the log next to
+        /// the cup, giving "Herty cup: Pine". Changing it after the fact orphans the markers already
+        /// placed, exactly as the trader prefix does.
+        /// </summary>
+        public string HertyCupMarkerTitlePrefix { get; set; } = "Herty cup: ";
+
+        /// <summary>
+        /// How close an existing cup marker has to be to suppress a new one, in blocks.
+        ///
+        /// Far tighter than the trader radius, and deliberately: a trader wanders around its cart,
+        /// but a cup is a block that never moves, and two cups on neighbouring faces of the same
+        /// trunk are two real cups one block apart that both deserve a pin.
+        /// </summary>
+        public double HertyCupDedupeRadius { get; set; } = 1.5;
+
+        /// <summary>
+        /// Whether the per-specialisation trader colours are unfolded on the Map options screen.
+        ///
+        /// Nine colours is the longest thing on that screen and the least often changed - most
+        /// players set them once, if ever. Folded away by default, because a settings screen that
+        /// autosizes to its children spends its height on whatever is left open.
+        /// </summary>
+        public bool TraderColorsExpanded { get; set; } = false;
+
         // ------------------------------------------------------------------ window layout (zones)
 
         /// <summary>
@@ -168,8 +271,8 @@ namespace PinMatrix
         /// <summary>
         /// How the Pin Matrix map-screen buttons are packaged while layout management is on:
         ///   "row"      - one window stretched across the whole row it is snapped to, buttons spread evenly
-        ///   "stacked"  - one window, buttons in a column, snapped to LayoutButtonCol/CellRow
-        ///   "parallel" - one window, buttons in a row, snapped to LayoutButtonCol/CellRow
+        ///   "stacked"  - one window, buttons in a column, wherever it was dragged
+        ///   "parallel" - one window, buttons in a row, wherever it was dragged
         ///   "float"    - one window per button, each placed independently
         /// </summary>
         public string LayoutButtonMode { get; set; } = "stacked";
@@ -180,8 +283,7 @@ namespace PinMatrix
         /// floating stack used to sit — a fresh install should not find its buttons in the map's
         /// top-left corner. Clamped into range on smaller grids.
         /// </summary>
-        public int LayoutButtonCol { get; set; } = 16;
-        public int LayoutButtonCellRow { get; set; } = 1;
+
 
         /// <summary>
         /// Remembered zones, keyed by composer DialogName. Stored as cell indices, never as
@@ -241,6 +343,11 @@ namespace PinMatrix
             TranslocatorDedupeRadius = Math.Min(64, Math.Max(1, TranslocatorDedupeRadius));
             TranslocatorRecentMinutes = Math.Min(1440, Math.Max(0, TranslocatorRecentMinutes));
             TranslocatorLineThickness = Math.Min(12, Math.Max(0.5, TranslocatorLineThickness));
+            // A band narrower than the line is thicker than it is long and stops reading as a band;
+            // wider than 40px and a typical on-screen hop holds fewer than two of them.
+            TranslocatorAntsDashPx = Math.Min(40, Math.Max(3, TranslocatorAntsDashPx));
+            TranslocatorAntsSpeed = Math.Min(200, Math.Max(0, TranslocatorAntsSpeed));
+            HertyCupDedupeRadius = Math.Min(64, Math.Max(0, HertyCupDedupeRadius));
             if (string.IsNullOrWhiteSpace(TranslocatorMarkerIcon)) TranslocatorMarkerIcon = "spiral";
             if (string.IsNullOrWhiteSpace(TraderMarkerIcon)) TraderMarkerIcon = "trader";
             if (TraderMarkerTitlePrefix == null) TraderMarkerTitlePrefix = "";
@@ -256,8 +363,6 @@ namespace PinMatrix
             {
                 LayoutButtonMode = "stacked";
             }
-            LayoutButtonCol = Math.Min(LayoutCols - 1, Math.Max(0, LayoutButtonCol));
-            LayoutButtonCellRow = Math.Min(LayoutRows - 1, Math.Max(0, LayoutButtonCellRow));
             if (LayoutAssignments == null) LayoutAssignments = new List<ZoneAssignment>();
 
             if (PinSets == null) PinSets = new List<PinSet>();

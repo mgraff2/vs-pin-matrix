@@ -16,7 +16,13 @@ Game references resolve from `%APPDATA%\Vintagestory` (override with `-p:Vintage
 
 ## Compat regression test — run it, always
 
-**After any code change and before any release or commit, run:**
+**Before every push and every release, run:**
+
+Not before every commit. Commits inside a working session are cheap and frequent, and gating each
+one on a four-minute headless boot matrix stops the session dead for nothing - the code has not
+left the machine yet. The push is the line that matters: that is where the artifact becomes
+something other people can get. (Asked for in Aug 2026, replacing "after any code change and
+before any release or commit".)
 
 ```
 .\tools\compat-test.ps1
@@ -237,6 +243,165 @@ startup: `ClientMain.Dispose()` clears `VtmlUtil.TagConverters` on leaving a wor
 exists because a set's icon button can be the first thing in a session to paint a waypoint icon —
 the editor need never have been opened — and vanilla only loads those SVGs lazily on first map open.
 
+## Herty cups (1.7.0) — the first named cross-mod behaviour, and still no `IsModEnabled`
+
+`HertyCupMarkers.cs`. Marks a cup when the player **places one or collects from one**. Three things
+are load-bearing:
+
+- **Ownership is sidestepped, not solved.** A client is never told who changed a block:
+  `IClientEventAPI.BlockChanged` is `(BlockPos pos, Block oldBlock)` and nothing more, and
+  `BEHertyCup.ToTreeAttributes` syncs spiles/pot size/rates with **no placer UID**. So "scan nearby
+  chunks and mark my cups" is not implementable from here at any effort — on a server it marks
+  everyone's. Both triggers are therefore *local player interactions*, which makes the marker yours
+  by construction with no ownership data anywhere. If Herty Cups ever does record a placer, this
+  does not need rewriting; it would only gain the ability to mark cups you have never touched.
+- **The two triggers are one hook, and the enum value is a trap.** `IInputAPI.InWorldAction` — but
+  the action to test is **`EnumEntityAction.InWorldRightMouseDown`, not `RightMouseDown`**. Decompiled
+  1.22.7: `SystemMouseInWorldInteractions` raises `InWorldRightMouseDown` for a right-click on a
+  block, while `EntityControls` routes its own actions (the plain `RightMouseDown` among them)
+  through the same event because `SystemPlayerControl` sets `Controls.OnAction = TriggerInWorldAction`.
+  Testing only the plain value — the obvious guess, and what this was first written as — means the
+  whole feature silently never fires. Both are accepted; a duplicate event is harmless because the
+  mark is deduped. Then: if the aimed-at block is a cup that is a collection, marked at
+  once; otherwise the aim is remembered and `BlockChanged` confirms whether a cup actually appeared
+  within 1.5s and 2 blocks. Confirming on the *block* rather than on the held item means this never
+  has to know what a cup is held as. `handled` is never written — swallowing that right-click would
+  stop the player collecting the resin they clicked for.
+- **Named, but still no mod check.** There is deliberately no `api.ModLoader.IsModEnabled("hertycups")`
+  branch: the condition that matters is whether a cup block exists, so `IsCup` tests the block code
+  (`hertycups:hertycup*`) and everything falls through on its first comparison when the mod is absent.
+  The count-marker rule from the compat invariants still cannot apply for the same reason the map
+  layer's cannot — `compat-test.ps1` reads *server* logs and this mod never loads server-side. The
+  tapped tree's wood comes out of block codes too (`Variant["side"]` gives the log direction,
+  the log's own `Variant["wood"]` names the tree), so no reference to the Herty Cups assembly exists
+  and none should be added.
+
+## Translocator marching ants (1.7.0) — why the clip is not optional
+
+`TranslocatorPathComponent.DrawAnts`. A recent path is drawn as alternating bands crawling from the
+origin pad towards the destination. The band walk **must** run on the segment clipped to the map
+frame, not on the whole segment: `BothBeyond` only discards lines wholly off one edge, so a zoomed-in
+hop crossing the view is tens of thousands of pixels long and would cost thousands of draw calls a
+frame. `MaxAntBands` is a backstop, not the bound — if it ever becomes the bound the line stops dead
+mid-screen. Band boundaries are measured from the segment's own origin so panning moves the bands
+with the line instead of sliding them along it, and the phase is accumulated from the render `dt`
+(one advance per frame, shared by every path) rather than read off a clock. Only *recent* paths are
+banded; every other line is still one quad.
+
+## The layout tools window (1.7.0) — temporary tools are never grid citizens
+
+`PmButton.Options` and everything after it are **layout-mode tools** (`PmButtons.LayoutOnly`), and
+they live in one floating `HudPinMatrixButtonWindow` named `pinmatrix-layouttools`, not in the
+permanent bar. Three facts:
+
+- **It reuses the button-window class rather than being a new one.** Everything it needs — title-bar
+  seeding, re-placing from `posX/posY` every compose, the empty-window crash guard — already exists
+  there. The only new surface is a `Snappable` flag.
+- **`Snappable = false` is what keeps it out of the grid**, and `HudLayoutOverlay.TrackDrag` is the
+  one place that reads it. The tools appear *because* you are arranging windows, so they must never
+  become another window to arrange, and must not sit in a cell you wanted. It is still in
+  `OwnDialogs` (not a HUD obstacle) and `SelfPlaced` (`ApplyAll` leaves it alone), and
+  `PositionButtons` short-circuits on `!Snappable` — no mode, no zone, no cell, only the position it
+  was dragged to or its default.
+- **It appears and vanishes with the zones for free.** `VisibleButtons` drops every `LayoutOnly`
+  button when the zones are hidden, an empty window composes to nothing, and the existing
+  `wanted = !b.IsEmpty` open/close rule does the rest. There is no separate lifecycle to keep in step.
+
+Why it was moved out of the bar at all: Layout Options *inside* the permanent stack meant toggling
+the zones changed the bar's button count, which resized it under the cursor — and in tab-row mode
+re-stretched it across the row mid-arrangement. The bar is now `{Editor, Zones}` and its size no
+longer depends on what the zones are doing. A zone remembered for the old floating-mode
+`pinmatrix-btn-options` window is dropped once at construction, or it would name a window that no
+longer exists forever.
+
+## GUI scale (1.7.0) — setting it is genuinely just setting the number
+
+`LayoutManager.SetGuiScale` / `AutoFitScale` / `FittedScale`, the slider on the Layout screen, the
+switch on Map options. Decompiled 1.22.7, and worth not re-deriving:
+
+- **`capi.Settings` *is* `ClientSettings.Inst`** (`ClientCoreAPI.Settings => ClientSettings.Inst`), so
+  `capi.Settings.Float["guiScale"] = v` fires both watchers the game registers on that key:
+  `ScreenManager`'s sets `RuntimeEnv.GUIScale = val`, `ClientMain`'s calls
+  `MarkAllDialogsForRecompose()`. Vanilla's own `onGuiScaleChanged` does nothing else beyond
+  updating its own button widths. There is no apply step to find.
+- **Vanilla's range is 4-16 in eighths, or 4-24 when the screen is wider than 3000px**
+  (`GuiCompositeSettings`). `MaxScaleStep()` matches it exactly so our slider can never reach a
+  value the game's own would refuse to show.
+- **`GuiElementSlider.TriggerOnlyOnMouseUp` is `internal`.** Vanilla uses it on this exact slider
+  because every change recomposes every open dialog and a drag fires once per step. Mods cannot call
+  it, and reflection is the thing this project has refused elsewhere — so `OnGuiScaleChanged`
+  debounces instead: each change bumps a sequence number and schedules a 250ms callback, and only the
+  last one applies. The readout is updated immediately so the number does not lag the handle.
+- **Proportional scaling is what makes windows land where they were, and it is not a coincidence.**
+  Every stored dialog position is in *unscaled* units (pixels / GUIScale). Scale proportionally with
+  the resolution and the unscaled screen size is **invariant** — 2560x1440 at 1.0, 1280x720 at 0.5
+  and 1920x1080 at 0.75 are all a 2560x1440 unscaled space. So nothing needs repositioning: in the
+  coordinate space those positions are written in, nothing moved. Snapped windows are immune anyway
+  (cells, re-derived). Three limits: an aspect change keeps the smaller ratio so one axis gains slack
+  rather than overflowing; eighth-steps quantize the intermediate answer; and a ratio outside
+  vanilla's range clamps, which is the one case where the unscaled space really does shrink and
+  windows can fall off — hence the second chat line pointing at `.pinmatrix rescue`. Note that rescue
+  *overwrites* stored positions, so it is a repair, not routine housekeeping: using it at B means B's
+  positions are what comes back to A.
+- **A scale set outside this mod becomes the reference, via `ISettings.AddWatcher<float>("guiScale")`.**
+  Without the watcher the honouring is only half true: `AutoFitScale` already ignores scale changes
+  (it answers resolution changes only), so a manual change survives — until the next resolution change
+  recomputes from the stale reference and silently discards it. Three things about the watcher:
+  `ClientSettings` is a **process-wide singleton** and `ISettings` has **no RemoveWatcher**, so it is
+  registered exactly once (`scaleWatcherRegistered`) and re-pointed at the current manager
+  (`scaleWatchTarget`) — per-world registration would leave a dead watcher per world joined, each
+  holding a stale config. It must ignore our own writes (`settingOurOwnScale`), or every automatic fit
+  would re-capture itself as the reference, which is the compounding-drift bug arrived at from the
+  other side. And it must capture **the value the watcher was handed**, not `RuntimeEnv.GUIScale` —
+  ScreenManager's watcher is what assigns that field and nothing promises it runs first.
+- **Auto-fit derives from a fixed reference, never from the current scale.**
+  `LayoutBaseScale` + `LayoutBaseScreenW/H` is "the scale you chose, and the screen you chose it on".
+  Scaling the *current* value by a ratio compounds: bounce between two machines a few times and the
+  size drifts away from anything anyone picked. From a fixed base, 2560x1440 at 1.0 gives exactly 0.5
+  at 1280x720 and exactly 1.0 on return. The base is re-captured **only** when the player sets the
+  scale themselves (slider or `.pinmatrix guiscale`) — auto-fit must never re-capture, or it becomes
+  the compounding version again.
+- **It answers a resolution change, not a scale change.** `Tick` snapshots whether the frame size
+  moved *before* `RebuildGrid` overwrites `lastFrameW/H`, and only then calls `AutoFitScale`. Reacting
+  to a scale change would fight the player's own slider — and since setting the scale is itself a
+  scale change, it would never settle.
+- **Not gated on `LayoutEnabled`**, unlike the zones button, the `Z` shortcut and the overlay. It
+  lives on Map options and answers a problem that has nothing to do with snap zones. Its own switch
+  is the only gate.
+
+`RescueOffscreen` is the companion: assignments are clamped when applied, but a window nobody snapped
+keeps whatever absolute position its own mod stored, from whatever screen it was stored on. It clamps
+every open `EnumDialogType.Dialog` composer back inside the screen (never past a zero origin, so a
+window taller than the screen still has a reachable title bar), writes through `SetDialogPosition` and
+flushes immediately. HUDs are skipped, as everywhere else.
+
+## A colour is never shown as hex alone
+
+Every surface that names a colour paints it too, and there are exactly three ways to do that
+depending on what the surface is:
+
+- **VTML** (`<pmswatch color="#rrggbb"/>`, `ColorSwatchComponent`) for anything that takes markup —
+  dropdown labels (`ColorFilterLabels`), `AddRichtext` (the Pin sets list's `CriteriaSummaryVtml`,
+  the recolour confirmation title). `AddStaticText` does **not** parse VTML, so switching a label to
+  swatches means switching the element too. Player text mixed into VTML must go through
+  `WpCommands.VtmlEscape` — a pin title with an angle bracket would otherwise eat the rest of the label.
+- **`AddDynamicCustomDraw` + `PaintChip`/`PaintSwatch`** beside every hex text input. Map options set
+  this pattern (trader, translocator, herty cup); the editor's two "...or hex" boxes follow it. A
+  chip next to a hex box must show what the screen *would actually apply* — hex when complete, else
+  the palette selection — because a chip that disagreed with the Save button is worse than none.
+- **Cairo, painted directly** inside custom-drawn lists: the table's colour column, and
+  `PendingBulk.LineSwatches` in the confirmation list. These are not text at all, so truncation has
+  to account for the chip's width or long rows overflow by exactly that much.
+
+`AddColorListPicker` and `AddIconListPicker` are vanilla's and already show the real thing — the
+palette they take is `svc.PaletteColors()` (the *full* vanilla palette, deliberately: you pick a new
+colour from everything available, which is a different question from filtering).
+
+The colour **filter** is the opposite: it lists only colours some waypoint actually uses
+(`RebuildColorFilterValues` over `allRows`, not the filtered rows), hue-sorted via `HueKey` so
+near-identical colours sit together, with a live count that tracks the *other* filters. Rebuilt
+whenever the waypoint list changes, dropping any filtered colour whose last pin has gone.
+
 ## Settings screens — explanations go in tooltips, not on the screen
 
 Two screens have now been rebuilt for the same reason (Window layout, then Map options): a
@@ -311,5 +476,5 @@ Stage `dist/pinmatrix_X.Y.Z.zip` into `%APPDATA%\VintagestoryData\Mods\` (remove
 pinmatrix zips) for local/friend testing first. Publish only on explicit go-ahead: dated
 CHANGELOG entry, README version refs, commit, tag `vX.Y.Z`, push,
 `gh release create vX.Y.Z dist\pinmatrix_X.Y.Z.zip --title "Pin Matrix X.Y.Z"`. ModDB
-upload is manual. **Run `.\tools\compat-test.ps1` and `.\tools\version-sweep.ps1` before
-every release.**
+upload is manual. **Run `.\tools\compat-test.ps1` before every push, and both it and
+`.\tools\version-sweep.ps1` before every release.**

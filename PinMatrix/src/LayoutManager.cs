@@ -16,6 +16,20 @@ namespace PinMatrix
         public int Row { get; set; }
         public int ColSpan { get; set; } = 1;
         public int RowSpan { get; set; } = 1;
+
+        /// <summary>
+        /// The grid this drop was made on. Zero in configs written before this existed, which is
+        /// read as "whatever the grid is now" — the old behaviour, and correct for them.
+        ///
+        /// A cell index only means a position relative to a particular grid: column 16 is four
+        /// fifths of the way across a 20-wide grid and two fifths of the way across a 40-wide one.
+        /// Keeping the grid alongside the index is what lets the window stay where the player put it
+        /// when the grid is resized — and keeping the ORIGINAL rather than rewriting it on every
+        /// resize is what stops the position drifting: 20 to 4 and back to 20 lands on the same
+        /// column it started on, because nothing in between was ever rounded into the stored value.
+        /// </summary>
+        public int GridCols { get; set; }
+        public int GridRows { get; set; }
     }
 
     /// <summary>
@@ -107,9 +121,268 @@ namespace PinMatrix
             // and nothing for a window resize — so it is polled in Tick, two float comparisons.
         }
 
+        // ------------------------------------------------------------------ gui scale
+
+        /// <summary>Vanilla's own slider units: the scale times eight, in whole steps.</summary>
+        public const int MinScaleStep = 4;
+
+        /// <summary>
+        /// Vanilla allows a taller range on a wide screen (GuiCompositeSettings: 4-24 above 3000px,
+        /// 4-16 otherwise). Matched exactly, so this control can never reach a value the game's own
+        /// slider would refuse to show.
+        /// </summary>
+        public int MaxScaleStep() => capi.Render.FrameWidth > 3000 ? 24 : 16;
+
+        public static int ScaleToStep(double scale) => (int)Math.Round(scale * 8);
+        public int ClampStep(int step) => Math.Max(MinScaleStep, Math.Min(MaxScaleStep(), step));
+
+        /// <summary>
+        /// Sets the game's GUI scale, which is all vanilla's own slider does.
+        ///
+        /// ClientSettings.Inst is exactly what ICoreClientAPI.Settings returns, so writing the value
+        /// fires both watchers the game registers on it: ScreenManager's sets RuntimeEnv.GUIScale,
+        /// ClientMain's calls MarkAllDialogsForRecompose. There is nothing else to call - vanilla's
+        /// onGuiScaleChanged sets the property and updates its own button widths, nothing more.
+        /// </summary>
+        public void SetGuiScale(double scale)
+        {
+            settingOurOwnScale = true;
+            try { capi.Settings.Float["guiScale"] = (float)scale; }
+            finally { settingOurOwnScale = false; }
+        }
+
+        // ---- honouring a scale the player set somewhere else
+
+        /// <summary>
+        /// True while *we* are the ones writing the setting, so the watcher below can tell a fit of
+        /// ours from a preference of theirs. Without it, every automatic fit would re-capture itself
+        /// as the new reference - which is the compounding-drift bug, arrived at from the other side.
+        /// </summary>
+        bool settingOurOwnScale;
+
+        /// <summary>
+        /// Registered exactly once per process, and re-pointed at whichever manager is current.
+        ///
+        /// ClientSettings is a static singleton that outlives a world, and ISettings offers no
+        /// RemoveWatcher - so registering per world would leave a dead watcher behind for every world
+        /// joined in a session, each holding a stale config to write to.
+        /// </summary>
+        static LayoutManager scaleWatchTarget;
+        static bool scaleWatcherRegistered;
+
+        /// <summary>
+        /// Watches the game's own GUI scale setting so a scale the player set ANYWHERE - vanilla's
+        /// Settings > Interface slider, another mod, a hand-edited clientsettings.json - becomes the
+        /// new reference.
+        ///
+        /// Without this the honouring is only half true. Auto-fit already ignores a scale change as
+        /// it happens (it answers resolution changes only), so a manual change survives... until the
+        /// next resolution change recomputes from the old reference and silently throws it away.
+        /// The player would set 1.5x, reconnect at another resolution, and find their choice gone
+        /// with nothing on screen explaining why.
+        /// </summary>
+        public void WatchGuiScale()
+        {
+            scaleWatchTarget = this;
+            if (scaleWatcherRegistered) return;
+            scaleWatcherRegistered = true;
+            capi.Settings.AddWatcher<float>("guiScale", v => scaleWatchTarget?.OnScaleChangedExternally(v));
+        }
+
+        /// <summary>Stops the shared watcher writing into a world that has been left.</summary>
+        public void StopWatchingGuiScale()
+        {
+            if (scaleWatchTarget == this) scaleWatchTarget = null;
+        }
+
+        void OnScaleChangedExternally(float value)
+        {
+            if (settingOurOwnScale) return;
+            CaptureScaleBase(value);
+        }
+
+        /// <summary>
+        /// Remembers "this scale, at this screen size" as the reference every later fit derives from.
+        /// </summary>
+        public void CaptureScaleBase() => CaptureScaleBase(RuntimeEnv.GUIScale);
+
+        /// <summary>
+        /// As above, for a scale handed to us rather than read back.
+        ///
+        /// The watcher must pass its own value: ScreenManager's watcher is what assigns
+        /// RuntimeEnv.GUIScale, and nothing promises it runs before ours - reading RuntimeEnv from
+        /// inside a watcher could capture the value being replaced.
+        /// </summary>
+        public void CaptureScaleBase(double scale)
+        {
+            if (scale <= 0) scale = 1;
+            int w = capi.Render.FrameWidth, h = capi.Render.FrameHeight;
+            if (w <= 0 || h <= 0) return;
+
+            // Nothing to write when nothing moved. A watcher can fire per drag step, and this saves
+            // to disk.
+            if (Math.Abs(config.LayoutBaseScale - scale) < 0.0001 &&
+                config.LayoutBaseScreenW == w && config.LayoutBaseScreenH == h) return;
+
+            config.LayoutBaseScale = scale;
+            config.LayoutBaseScreenW = w;
+            config.LayoutBaseScreenH = h;
+            save?.Invoke();
+        }
+
+        /// <summary>The scale auto-fit would choose for the current screen, or null with no base yet.</summary>
+        public double? FittedScale() => FittedScale(out _);
+
+        /// <summary>
+        /// As <see cref="FittedScale()"/>, also reporting whether the answer had to be clamped.
+        ///
+        /// Clamping is the one case where the promise breaks. Everything else about this feature is
+        /// proportional, and proportion is what keeps the *unscaled* screen size constant - which is
+        /// the coordinate space every stored window position lives in, and therefore the reason
+        /// windows land where they were. Once the ideal scale falls outside what the game will
+        /// accept, that stops being true and windows really can end up off the edge.
+        /// </summary>
+        public double? FittedScale(out bool clamped)
+        {
+            clamped = false;
+            if (config.LayoutBaseScale <= 0 || config.LayoutBaseScreenW <= 0 || config.LayoutBaseScreenH <= 0) return null;
+
+            int w = capi.Render.FrameWidth, h = capi.Render.FrameHeight;
+            if (w <= 0 || h <= 0) return null;
+
+            // The smaller of the two ratios. Taking height alone would overflow the sides when the
+            // aspect ratio changes too, which a remote session is quite capable of doing.
+            double ratio = Math.Min((double)w / config.LayoutBaseScreenW,
+                                    (double)h / config.LayoutBaseScreenH);
+            int ideal = ScaleToStep(config.LayoutBaseScale * ratio);
+            int step = ClampStep(ideal);
+            clamped = step != ideal;
+            return step / 8.0;
+        }
+
+        /// <summary>
+        /// Re-derives the GUI scale for a screen that has just changed size.
+        ///
+        /// NOT gated on LayoutEnabled, unlike the zones button, the Z shortcut and the overlay. It
+        /// lives on the Map options screen and answers a problem that has nothing to do with snap
+        /// zones: no dialog in this engine resizes, so a smaller screen needs a smaller scale whether
+        /// or not you arrange anything on a grid. Its own switch is the only thing that gates it.
+        ///
+        /// Silent when it changes nothing, and it does NOT re-capture the base - that is the whole
+        /// reason the result round-trips instead of drifting.
+        /// </summary>
+        void AutoFitScale()
+        {
+            if (!config.LayoutAutoScale) return;
+            if (capi.Render.FrameWidth <= 0 || capi.Render.FrameHeight <= 0) return;
+
+            double? fitted = FittedScale(out bool clamped);
+            if (fitted == null)
+            {
+                // First run with the feature on: this screen becomes the reference rather than
+                // something to correct towards.
+                CaptureScaleBase();
+                return;
+            }
+
+            if (ScaleToStep(fitted.Value) == ScaleToStep(RuntimeEnv.GUIScale)) return;
+
+            SetGuiScale(fitted.Value);
+            capi.ShowChatMessage(
+                $"[Pin Matrix] Screen is now {capi.Render.FrameWidth}x{capi.Render.FrameHeight} - "
+                + $"GUI scale set to {fitted.Value:0.###}. Use the scale slider on the Layout screen "
+                + "if that is not the size you want here; moving it re-sets the reference.");
+
+            // Said out loud because it is the one case where windows can still end up off the edge:
+            // the proportion that keeps everything in place could not be reached.
+            if (clamped)
+            {
+                capi.ShowChatMessage(
+                    "[Pin Matrix] That is as far as the game's own scale range goes, so this screen "
+                    + "cannot hold quite what the last one did - some windows may need "
+                    + ".pinmatrix rescue.");
+            }
+        }
+
+        // ------------------------------------------------------------------ rescue
+
+        /// <summary>
+        /// Drags every off-screen window back into view, and returns how many it moved.
+        ///
+        /// The zones already clamp what they place, but a window nobody snapped keeps whatever
+        /// absolute position its own mod stored - and those were stored on whatever screen you were
+        /// using at the time. Come back on a smaller one and they can sit entirely outside it, with
+        /// no title bar left on screen to drag them home by. This is the way back, and it
+        /// deliberately does not care whose window it is.
+        ///
+        /// HUDs are skipped, as everywhere else: they re-assert their own position every tick, so
+        /// moving one achieves nothing but a flicker.
+        /// </summary>
+        public int RescueOffscreen()
+        {
+            float scale = RuntimeEnv.GUIScale;
+            if (scale <= 0) scale = 1;
+            double screenW = capi.Render.FrameWidth / scale;
+            double screenH = capi.Render.FrameHeight / scale;
+
+            int moved = 0;
+            foreach (var gui in capi.Gui.OpenedGuis)
+            {
+                if (gui == null || !gui.IsOpened()) continue;
+                if (gui.DialogType != EnumDialogType.Dialog) continue;
+
+                foreach (var pair in gui.Composers)
+                {
+                    var compo = pair.Value;
+                    if (compo == null || !compo.Enabled || compo.Bounds == null) continue;
+
+                    double w = compo.Bounds.OuterWidth / scale;
+                    double h = compo.Bounds.OuterHeight / scale;
+                    double x = compo.Bounds.absX / scale;
+                    double y = compo.Bounds.absY / scale;
+
+                    // Clamped into the screen, but never past a zero origin: a window taller than the
+                    // screen gets its top-left pinned at 0 so its title bar is at least reachable.
+                    double nx = Clamp(x, 0, Math.Max(0, screenW - w));
+                    double ny = Clamp(y, 0, Math.Max(0, screenH - h));
+                    if (Math.Abs(nx - x) < 0.5 && Math.Abs(ny - y) < 0.5) continue;
+
+                    MoveComposer(compo, nx, ny);
+                    if (!string.IsNullOrEmpty(compo.DialogName))
+                    {
+                        capi.Gui.SetDialogPosition(compo.DialogName,
+                            new Vec2i((int)Math.Round(nx), (int)Math.Round(ny)));
+                    }
+                    moved++;
+                }
+            }
+
+            // Straight to disk: the point of this is recovering from a mess, and a mess is exactly
+            // the situation where the session might not end tidily.
+            if (moved > 0) FlushPositionsNow();
+            return moved;
+        }
+
         // ------------------------------------------------------------------ grid & invalidation
 
         public void Invalidate() => dirty = true;
+
+        /// <summary>
+        /// Rebuilds the grid at once instead of waiting for the next watcher tick.
+        ///
+        /// The Layout screen's status line reads Grid.Cols/Rows, and Invalidate only *marks* the grid
+        /// stale — so typing 40 into a box showed "4 x 20 grid": the label was written from the grid
+        /// as it stood one keystroke ago, and nothing rewrote it once the rebuild happened. The
+        /// overlay was a tick behind for the same reason. Still leaves `dirty` set, so the re-apply
+        /// of remembered zones stays on the tick where it can be deferred properly after a scale
+        /// change.
+        /// </summary>
+        public void InvalidateNow()
+        {
+            dirty = true;
+            RebuildGrid();
+            RecomputeBlocked();
+        }
 
         void RebuildGrid()
         {
@@ -133,9 +406,19 @@ namespace PinMatrix
         {
             huds.Sample(capi, OwnDialogs);
 
+            // Captured before RebuildGrid moves the goalposts: auto-fit answers a *resolution*
+            // change only. Reacting to a scale change too would fight the player's own slider, and
+            // since setting the scale is itself a scale change, it would also never settle.
+            bool resolutionChanged = capi.Render.FrameWidth != lastFrameW ||
+                                     capi.Render.FrameHeight != lastFrameH;
+
             if (dirty || ScreenChanged())
             {
                 dirty = false;
+                // Before the rebuild, not after: the watchers vanilla registers on "guiScale" run
+                // synchronously, so RuntimeEnv.GUIScale is already the new value here and the grid
+                // below is built once, at the size it will actually be drawn at.
+                if (resolutionChanged) AutoFitScale();
                 RebuildGrid();
                 RecomputeBlocked();
                 // Vanilla needs a beat to finish recomposing after a scale change before the sizes
@@ -405,6 +688,8 @@ namespace PinMatrix
                 config.LayoutAssignments.Add(a);
             }
             a.Col = col; a.Row = row; a.ColSpan = colSpan; a.RowSpan = rowSpan;
+            // The drop is expressed in the grid it was dropped on, and stays that way.
+            a.GridCols = Grid.Cols; a.GridRows = Grid.Rows;
 
             // Windows we place ourselves (the button bar) only need the assignment recorded — the
             // mod system re-places them from it on the next tick, and letting both write the same
@@ -538,8 +823,10 @@ namespace PinMatrix
             {
                 if (config.LayoutButtonMode != "row") return -1;
                 var a = Find(ButtonsDialogName);
-                int row = a != null ? a.Row : config.LayoutRows - 1;
-                return Math.Min(config.LayoutRows - 1, Math.Max(0, row));
+                // Mapped, like every other assignment: the bar's row is four fifths of the way down
+                // a 20-row grid, not row 16 of whatever grid happens to be on screen.
+                int row = a != null ? MappedRow(a) : Grid.Rows - 1;
+                return Math.Min(Grid.Rows - 1, Math.Max(0, row));
             }
         }
 
@@ -569,10 +856,44 @@ namespace PinMatrix
         }
 
         /// <summary>The cell the button stack anchors to in "cell" mode.</summary>
-        public URect OwnButtonCell() => Grid.Cell(config.LayoutButtonCol, config.LayoutButtonCellRow);
 
-        /// <summary>Where an assignment actually goes.</summary>
-        public URect ZoneFor(ZoneAssignment a) => Grid.Cell(a.Col, a.Row, a.ColSpan, a.RowSpan);
+
+        // ------------------------------------------------------------------ regridding
+
+        /// <summary>
+        /// One axis of an assignment re-expressed in the current grid: the nearest cell to where it
+        /// actually sits, proportionally.
+        ///
+        /// Rounded, not truncated — a window four fifths of the way across should land on the cell
+        /// nearest four fifths, not the one before it. Always computed from the stored grid, never
+        /// from the last answer, so repeated resizes cannot walk a window across the screen.
+        /// </summary>
+        static int MapIndex(int index, int storedCount, int currentCount)
+        {
+            if (storedCount <= 0 || storedCount == currentCount) return Clamp(index, 0, currentCount - 1);
+            return Clamp((int)Math.Round(index * (double)currentCount / storedCount), 0, currentCount - 1);
+        }
+
+        static int MapSpan(int span, int storedCount, int currentCount, int from)
+        {
+            if (storedCount <= 0 || storedCount == currentCount) span = Math.Max(1, span);
+            else span = Math.Max(1, (int)Math.Round(span * (double)currentCount / storedCount));
+            return Math.Min(span, Math.Max(1, currentCount - from));
+        }
+
+        static int Clamp(int v, int min, int max) => v < min ? min : (v > max ? max : v);
+
+        public int MappedCol(ZoneAssignment a) => MapIndex(a.Col, a.GridCols, Grid.Cols);
+        public int MappedRow(ZoneAssignment a) => MapIndex(a.Row, a.GridRows, Grid.Rows);
+
+        /// <summary>Where an assignment actually goes, in the grid as it stands now.</summary>
+        public URect ZoneFor(ZoneAssignment a)
+        {
+            int col = MappedCol(a), row = MappedRow(a);
+            return Grid.Cell(col, row,
+                             MapSpan(a.ColSpan, a.GridCols, Grid.Cols, col),
+                             MapSpan(a.RowSpan, a.GridRows, Grid.Rows, row));
+        }
 
         /// <summary>
         /// The rectangle a window would actually occupy if dropped on this cell right now, used by

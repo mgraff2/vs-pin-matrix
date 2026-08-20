@@ -8,7 +8,25 @@ using Vintagestory.GameContent;
 namespace PinMatrix
 {
     /// <summary>Which map-screen button. Also the order they appear in.</summary>
-    public enum PmButton { Editor, Zones, Options }
+    /// <summary>
+    /// What a map-screen button window can hold.
+    ///
+    /// Everything from <see cref="PmButton.Options"/> onwards is a <em>layout-mode tool</em>: it only
+    /// means anything while the zone grid is on screen, and it lives in the floating tools window
+    /// rather than in the permanent button stack. See <see cref="PmButtons.LayoutOnly"/>.
+    /// </summary>
+    public enum PmButton { Editor, Zones, Options, RescanHuds, ResetLayout, Rescue }
+
+    public static class PmButtons
+    {
+        /// <summary>
+        /// True for the tools that exist only while the zones are showing.
+        ///
+        /// Keeping this one predicate rather than a list per screen is what stops the tools window
+        /// and the thing that fills it disagreeing about what "temporary" means.
+        /// </summary>
+        public static bool LayoutOnly(PmButton b) => b >= PmButton.Options;
+    }
 
     /// <summary>
     /// A map-screen button window: either the whole set in one window, or a single button on its own.
@@ -43,6 +61,33 @@ namespace PinMatrix
         /// taking a fixed width. That is what makes the tab row span the screen.
         /// </summary>
         double stretchWidth;
+
+        /// <summary>
+        /// Whether the zone grid may capture and snap this window when it is dragged.
+        ///
+        /// False for the floating tools window, and that is the whole point of it: the tools appear
+        /// *because* you are arranging windows, so they are the one thing that must never become
+        /// another window to arrange. It stays where you drop it, on or off the lattice.
+        /// <see cref="HudLayoutOverlay"/> reads this when collecting drag candidates.
+        /// </summary>
+        public bool Snappable { get; set; } = true;
+
+        /// <summary>
+        /// What the drag handle says. "Move" for the button bar, which is all it does; the floating
+        /// tools window names itself instead, because it is a window you go looking for rather than
+        /// a handle attached to something you can already see.
+        /// </summary>
+        public string TitleBarText { get; set; } = "Move";
+
+        /// <summary>
+        /// What the title bar's X does. Null leaves it dead — GuiElementDialogTitleBar draws the
+        /// button whether or not anything is listening (it ends in a plain <c>OnClose?.Invoke()</c>),
+        /// so a window with a bar and no handler shows a close button that silently does nothing.
+        ///
+        /// These bars only exist while the zones are up, so the only honest meaning for closing one
+        /// is "I have finished arranging" — which is why every one of them hides the zones.
+        /// </summary>
+        public Action OnTitleBarClose;
 
         double posX, posY;
         double composedForFrameW;
@@ -203,6 +248,36 @@ namespace PinMatrix
             ClampOnScreen(ref posX, ref posY);
         }
 
+        /// <summary>
+        /// Points vanilla's stored position at where <em>we</em> are about to put this window.
+        ///
+        /// THIS IS WHAT MAKES THE TAB ROW FOLLOW A DROP. A movable title bar reads GetDialogPosition
+        /// on every compose and restores the window to it (the same rule that makes other mods'
+        /// windows come back where you left them). Dragging the bar writes the dragged position into
+        /// that store — so when we then placed the bar on its new strip, the very recompose that move
+        /// triggered handed the title bar the *dragged* position and it went straight back. The row
+        /// assignment had updated correctly all along; the window just could not stay where we put
+        /// it. Hiding the zones removed the title bar, nothing restored anything, and it finally
+        /// jumped to the strip — which is exactly the "it only snaps after I hide zones" symptom.
+        ///
+        /// Writing our position in as the *seed* rather than as a plain stored position matters:
+        /// TryGetPlayerPosition compares the two, so a seeded value is still correctly not mistaken
+        /// for somewhere the player chose.
+        /// </summary>
+        public void PinPositionForTitleBar(double unscaledX, double unscaledY)
+        {
+            ClampOnScreen(ref unscaledX, ref unscaledY);
+            var pos = new Vec2i((int)Math.Round(unscaledX), (int)Math.Round(unscaledY));
+
+            var stored = capi.Gui.GetDialogPosition(dialogName);
+            if (stored != null && stored.X == pos.X && stored.Y == pos.Y &&
+                seeded != null && seeded.X == pos.X && seeded.Y == pos.Y) return;
+
+            seeded = pos;
+            capi.Gui.SetDialogPosition(dialogName, pos);
+            PositionsChanged?.Invoke();
+        }
+
         public void SetPosition(double unscaledX, double unscaledY)
         {
             ClampOnScreen(ref unscaledX, ref unscaledY);
@@ -275,7 +350,7 @@ namespace PinMatrix
             foreach (var b in contents)
             {
                 if (b == PmButton.Zones && !config.LayoutEnabled) continue;
-                if (b == PmButton.Options && !zonesOn) continue;
+                if (PmButtons.LayoutOnly(b) && !zonesOn) continue;
                 list.Add(b);
             }
             return list;
@@ -290,6 +365,12 @@ namespace PinMatrix
                 case PmButton.Zones:
                     string t = (zonesVisible != null && zonesVisible()) ? "Hide Zones" : "Layout Zones";
                     return config.MapLayoutShortcutKey ? t + " (Z)" : t;
+                case PmButton.RescanHuds:
+                    return "Rescan HUDs";
+                case PmButton.ResetLayout:
+                    return "Reset layout";
+                case PmButton.Rescue:
+                    return "Rescue off-screen";
                 default:
                     return "Layout Options";
             }
@@ -340,7 +421,7 @@ namespace PinMatrix
 
             // A title bar is what makes a window draggable in this game, so it appears exactly when
             // dragging is the point and gets out of the way the rest of the time.
-            if (composedWithTitleBar) composer.AddDialogTitleBar("Move", null);
+            if (composedWithTitleBar) composer.AddDialogTitleBar(TitleBarText, OnTitleBarClose);
 
             double top = composedWithTitleBar ? 30 : 0;
             double buttonW = ButtonW;

@@ -94,10 +94,30 @@ namespace PinMatrix
         MeshRef quad;
         readonly Matrixf mat = new Matrixf();
         readonly Vec4f lineColor = new Vec4f();
+        readonly Vec4f altColor = new Vec4f();
         readonly Vec4f endColor = new Vec4f();
 
         /// <summary>Half-size of the little square drawn at each pad, in pixels.</summary>
         const float EndMarkerPx = 7f;
+
+        /// <summary>
+        /// How far the ant pattern has crawled, in screen pixels, wrapped to one band pair.
+        ///
+        /// Accumulated from the render delta rather than read off a clock, so it advances with
+        /// frames actually drawn and stops dead while the map is shut - which is the only time
+        /// nobody can see it. One phase shared by every path, so several recent hops crawl in step
+        /// instead of shimmering against each other.
+        /// </summary>
+        float antsPhase;
+
+        /// <summary>
+        /// Ceiling on bands per line, purely as a backstop. The real bound is the clip in
+        /// <see cref="DrawAnts"/>: the pattern is only walked across the part of the segment inside
+        /// the map frame, so the count follows the frame's diagonal and not how far apart the two
+        /// pads are. Without that clip a hop viewed zoomed in is tens of thousands of pixels long,
+        /// this cap would be the thing doing the bounding, and the line would stop dead mid-screen.
+        /// </summary>
+        const int MaxAntBands = 512;
 
         public TranslocatorPathComponent(ICoreClientAPI capi) : base(capi) { }
 
@@ -111,6 +131,10 @@ namespace PinMatrix
             if (paths.Count == 0) return;
 
             if (quad == null) quad = capi.Render.UploadMesh(QuadMeshUtil.GetQuad());
+
+            // One phase advance per frame, not per path: every recent line shares the pattern.
+            double dashPx = Math.Max(1.0, config.TranslocatorAntsDashPx);
+            antsPhase = (float)((antsPhase + dt * config.TranslocatorAntsSpeed) % (2 * dashPx));
 
             var shader = capi.Render.GetEngineShader(EnumShaderProgram.Gui);
             shader.Uniform("extraGlow", 0);
@@ -164,7 +188,24 @@ namespace PinMatrix
                     lineColor.Set(r, g, b, path.Recent ? 0.95f : 0.55f);
                     endColor.Set(r, g, b, 1f);
 
-                    DrawQuad(shader, (ax + bx) / 2f, (ay + by) / 2f, (float)Math.Atan2(dy, dx), length / 2f, half, lineColor);
+                    float angle = (float)Math.Atan2(dy, dx);
+
+                    // Marching ants, recent hops only. Old lines stay one quad apiece, so the cost
+                    // of this follows the hop you care about rather than the size of the network.
+                    if (path.Recent && config.TranslocatorRecentAnts)
+                    {
+                        int altRgb = TraderMarkers.ParseHex(config.TranslocatorMarkerColor);
+                        altColor.Set(((altRgb >> 16) & 0xFF) / 255f,
+                                     ((altRgb >> 8) & 0xFF) / 255f,
+                                     (altRgb & 0xFF) / 255f,
+                                     0.95f);
+                        DrawAnts(shader, map, ax, ay, dx / length, dy / length, length, angle, half, dashPx);
+                    }
+                    else
+                    {
+                        DrawQuad(shader, (ax + bx) / 2f, (ay + by) / 2f, angle, length / 2f, half, lineColor);
+                    }
+
                     DrawQuad(shader, ax, ay, 0f, EndMarkerPx / 2f, EndMarkerPx / 2f, endColor);
                     DrawQuad(shader, bx, by, 0f, EndMarkerPx / 2f, EndMarkerPx / 2f, endColor);
                 }
@@ -173,6 +214,77 @@ namespace PinMatrix
             {
                 capi.Render.PopScissor();
             }
+        }
+
+        /// <summary>
+        /// Walks the ant pattern along one segment, drawing a quad per colour band.
+        ///
+        /// THE CLIP IS THE POINT. The caller has already discarded segments that are wholly off one
+        /// edge, but that still leaves a line crossing the view with both pads far outside it - and
+        /// zoomed in, "far outside" is tens of thousands of pixels. Banding the whole segment would
+        /// be thousands of draw calls a frame for a line the player can only see 1200px of. So the
+        /// segment is clipped to the map frame first and only the visible run is banded. Band
+        /// boundaries are still computed in the segment's own coordinates, measured from its origin,
+        /// so clipping changes how much is drawn and never where the bands fall - pan the map and
+        /// the pattern stays put on the line instead of sliding along it.
+        /// </summary>
+        void DrawAnts(IShaderProgram shader, GuiElementMap map, float ax, float ay,
+                      float ux, float uy, float length, float angle, float half, double dash)
+        {
+            double left = map.Bounds.renderX, top = map.Bounds.renderY;
+            double right = left + map.Bounds.InnerWidth, bottom = top + map.Bounds.InnerHeight;
+
+            // Liang-Barsky, in units of the segment: t is 0 at the first pad and 1 at the second.
+            // A little slack so a band straddling the frame edge is drawn rather than popping in.
+            const double Slack = 16.0;
+            double dxTotal = ux * length, dyTotal = uy * length;
+            double t0 = 0, t1 = 1;
+            if (!ClipEdge(-dxTotal, ax - (left - Slack), ref t0, ref t1)) return;
+            if (!ClipEdge(dxTotal, (right + Slack) - ax, ref t0, ref t1)) return;
+            if (!ClipEdge(-dyTotal, ay - (top - Slack), ref t0, ref t1)) return;
+            if (!ClipEdge(dyTotal, (bottom + Slack) - ay, ref t0, ref t1)) return;
+
+            double startPx = t0 * length, endPx = t1 * length;
+            if (endPx - startPx < 0.5) return;
+
+            // The pattern translates towards the second pad as the phase grows, which is what makes
+            // the bands crawl the way the player travelled rather than back towards where they came
+            // from. Direction is the one thing the old flat line could never show.
+            double off = antsPhase;
+            double s = startPx;
+
+            for (int i = 0; i < MaxAntBands && s < endPx; i++)
+            {
+                double idx = Math.Floor((s - off) / dash);
+                double e = Math.Min(off + (idx + 1) * dash, endPx);
+                // Rounding can land the next boundary on top of s; step a whole band rather than
+                // spinning until the guard runs out.
+                if (e <= s + 1e-6) e = Math.Min(s + dash, endPx);
+                if (e <= s) break;
+
+                double mid = (s + e) / 2;
+                DrawQuad(shader, ax + ux * (float)mid, ay + uy * (float)mid, angle,
+                         (float)(e - s) / 2f, half, ((long)idx & 1L) == 0 ? lineColor : altColor);
+                s = e;
+            }
+        }
+
+        /// <summary>One Liang-Barsky edge test. Returns false once the segment is wholly outside.</summary>
+        static bool ClipEdge(double p, double q, ref double t0, ref double t1)
+        {
+            if (Math.Abs(p) < 1e-9) return q >= 0;
+            double t = q / p;
+            if (p < 0)
+            {
+                if (t > t1) return false;
+                if (t > t0) t0 = t;
+            }
+            else
+            {
+                if (t < t0) return false;
+                if (t < t1) t1 = t;
+            }
+            return true;
         }
 
         void DrawQuad(IShaderProgram shader, float cx, float cy, float angle, float halfW, float halfH, Vec4f color)

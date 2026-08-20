@@ -75,24 +75,38 @@ namespace PinMatrix
             // ---- button placement
             c.AddStaticText("Buttons", font, EB(4, y + 4, 74, 25));
             c.AddSmallButton(ButtonModeLabel(), OnCycleButtonMode, EB(82, y, 180, 28));
-            c.AddStaticText("Cell", font, EB(274, y + 4, 46, 25));
-            c.AddNumberInput(EB(322, y, 50, 28), OnButtonColChanged, font, "layoutbuttoncol");
-            c.AddNumberInput(EB(378, y, 50, 28), OnButtonCellRowChanged, font, "layoutbuttoncellrow");
             c.AddHoverText(
                 "How the Pin Matrix map-screen buttons are packaged.  "
-                + "Stacked: one window, buttons in a column, snapped to the Cell on the right.  "
+                + "Stacked: one window, buttons in a column.  "
                 + "Parallel: the same window with its buttons side by side.  "
                 + "Tab row: one window stretched right across the row you drag it to, buttons spread evenly.  "
                 + "Floating: a window per button, each placed and snapped on its own.  "
                 + "Show the zones and every window grows a drag handle; hide the zones and they are "
                 + "plain buttons again, right where you left them.",
                 tip, 360, EB(4, y, 258, 28).FlatCopy(), "tipbuttons");
-            c.AddHoverText(
-                "Column and row of the cell the button window anchors to in Stacked and Parallel "
-                + "modes. Dragging the window somewhere overrides this, so it is the starting point "
-                + "rather than the last word.",
-                tip, 320, EB(274, y, 154, 28).FlatCopy(), "tipbuttoncell");
             y += 42;
+
+            c.AddInset(EB(4, y, DW - 8, 2), 2);
+            y += 14;
+
+            // ---- interface scale
+            //
+            // A copy of the game's own control, put here because this is the screen you are on when
+            // the problem shows up. Nothing in the engine resizes a dialog, so a smaller screen does
+            // not make the windows smaller - the scale is the only lever, and it is otherwise four
+            // clicks deep in Settings, behind closing the map.
+            c.AddStaticText("Interface scale", font, EB(4, y + 4, 130, 25));
+            c.AddSlider(OnGuiScaleChanged, EB(140, y + 4, 200, 20), "layoutguiscale");
+            c.AddDynamicText(GuiScaleText(), font, EB(352, y + 4, 320, 25), "layoutguiscaletext");
+            c.AddHoverText(
+                "The game's own GUI scale, the same setting as Settings > Interface > GUI scale and "
+                + "the same range. Every window is a fixed number of pixels across, so this is the "
+                + "only thing that changes how much of the screen they take. Moving it also re-sets "
+                + "the reference \"Fit interface scale to the screen\" measures from on the Map "
+                + "options screen - so put the interface where you want it here, and the fit follows "
+                + "from that.",
+                tip, 360, EB(4, y, 340, 28).FlatCopy(), "tipguiscale");
+            y += 34;
 
             c.AddInset(EB(4, y, DW - 8, 2), 2);
             y += 14;
@@ -106,6 +120,7 @@ namespace PinMatrix
             c.AddSmallButton("Rescan HUDs", OnRescanHuds, EB(142, y, 140, 30));
             c.AddSmallButton("List open windows", OnDumpDialogs, EB(290, y, 190, 30));
             c.AddSmallButton($"Reset layout ({LayoutAssignmentCount()})", OnResetLayout, EB(488, y, 190, 30));
+            c.AddSmallButton("Rescue off-screen", OnRescueOffscreen, EB(686, y, 180, 30));
             c.AddHoverText(
                 "Shows the zone grid over the map screen so you can drag windows into it. Same as the "
                 + "Layout Zones button on the map. This only displays the grid — it does not turn the "
@@ -118,6 +133,11 @@ namespace PinMatrix
             c.AddHoverText("Forgets every remembered zone and puts those windows back. "
                 + "Also available in chat as .pinmatrix resetlayout, for when a window lands somewhere you cannot click.",
                 tip, 320, EB(488, y, 190, 30).FlatCopy(), "tipreset");
+            c.AddHoverText("Drags every open window that has ended up outside the screen back into "
+                + "view — anyone's window, not just ours. Windows remember absolute positions, so "
+                + "coming back on a smaller screen can leave one completely off it with no title bar "
+                + "left to grab. Also in chat as .pinmatrix rescue.",
+                tip, 320, EB(686, y, 180, 30).FlatCopy(), "tiprescue");
             y += 40;
 
             // Back to the map, not to the matrix: this screen is only ever reached from the map's
@@ -132,7 +152,7 @@ namespace PinMatrix
             if (Layout == null) return "Layout system unavailable.";
             var g = Layout.Grid;
             string dock = config.LayoutButtonMode == "row" ? $"tab row {Layout.ButtonRowIndex}"
-                        : config.LayoutButtonMode == "cell" ? $"cell {config.LayoutButtonCol},{config.LayoutButtonCellRow}"
+                        : config.LayoutButtonMode == "cell" ? "cell"
                         : "floating";
             // Kept terse deliberately: this sits in a fixed box, and a status line that grows with
             // its own numbers is exactly how a dialog ends up overrunning the buttons below it.
@@ -150,15 +170,22 @@ namespace PinMatrix
             c.GetNumberInput("layoutcols").SetValue(config.LayoutCols.ToString(CultureInfo.InvariantCulture));
             c.GetNumberInput("layoutrows").SetValue(config.LayoutRows.ToString(CultureInfo.InvariantCulture));
             c.GetNumberInput("layoutthreshold").SetValue(config.LayoutHudCoverageThreshold.ToString(CultureInfo.InvariantCulture));
-            c.GetNumberInput("layoutbuttoncol").SetValue(config.LayoutButtonCol.ToString(CultureInfo.InvariantCulture));
-            c.GetNumberInput("layoutbuttoncellrow").SetValue(config.LayoutButtonCellRow.ToString(CultureInfo.InvariantCulture));
+
+            var slider = c.GetSlider("layoutguiscale");
+            if (slider != null && Layout != null)
+            {
+                slider.SetValues(Layout.ClampStep(LayoutManager.ScaleToStep(RuntimeEnv.GUIScale)),
+                                 LayoutManager.MinScaleStep, Layout.MaxScaleStep(), 1);
+            }
         }
 
         void SaveLayoutConfig(bool regrid)
         {
             config.Clamp();
             capi.StoreModConfig(config, "pinmatrix.json");
-            if (regrid) Layout?.Invalidate();
+            // Now, not on the next tick: the status line below is written from the grid, so a
+            // deferred rebuild means it reports the size before the one just typed.
+            if (regrid) Layout?.InvalidateNow();
             SingleComposer?.GetDynamicText("layoutstatus")?.SetNewText(LayoutStatusText(), false, true, false);
         }
 
@@ -235,24 +262,6 @@ namespace PinMatrix
             return true;
         }
 
-        void OnButtonColChanged(string t)
-        {
-            if (int.TryParse(t, NumberStyles.Integer, CultureInfo.InvariantCulture, out int v) && v >= 0)
-            {
-                config.LayoutButtonCol = v;
-                SaveLayoutConfig(true);
-            }
-        }
-
-        void OnButtonCellRowChanged(string t)
-        {
-            if (int.TryParse(t, NumberStyles.Integer, CultureInfo.InvariantCulture, out int v) && v >= 0)
-            {
-                config.LayoutButtonCellRow = v;
-                SaveLayoutConfig(true);
-            }
-        }
-
         void OnHudThresholdChanged(string t)
         {
             if (int.TryParse(t, NumberStyles.Integer, CultureInfo.InvariantCulture, out int v) && v > 0)
@@ -286,6 +295,61 @@ namespace PinMatrix
         {
             if (Layout == null) return true;
             foreach (var line in Layout.Dump().Split('\n')) capi.ShowChatMessage(line.TrimEnd());
+            return true;
+        }
+
+        int pendingScaleStep = -1;
+        long scaleChangeSeq;
+
+        /// <summary>
+        /// The slider is in vanilla's units - the scale times eight - so its whole steps are the
+        /// same 0.125 the game's own moves in, and it can never land between two values the game
+        /// would show.
+        ///
+        /// DEBOUNCED, because applying a scale recomposes every open dialog and a drag fires this
+        /// once per step. Vanilla solves the same problem with GuiElementSlider.TriggerOnlyOnMouseUp,
+        /// which is `internal` and therefore not ours to call - and reaching for it by reflection is
+        /// exactly the thing this mod has refused to do elsewhere. So: every change restarts a short
+        /// timer and only the last one is applied. The readout follows the handle immediately even
+        /// though the scale has not been set yet, or the number would lag what you are dragging.
+        /// </summary>
+        bool OnGuiScaleChanged(int step)
+        {
+            if (Layout == null) return true;
+
+            pendingScaleStep = Layout.ClampStep(step);
+            long seq = ++scaleChangeSeq;
+            SingleComposer?.GetDynamicText("layoutguiscaletext")?.SetNewText(ScaleText(pendingScaleStep / 8.0));
+
+            capi.Event.RegisterCallback(_ =>
+            {
+                if (seq != scaleChangeSeq || pendingScaleStep < 0 || Layout == null) return;
+                Layout.SetGuiScale(pendingScaleStep / 8.0);
+                // Moving it by hand is the player saying "this size, on this screen" - exactly what
+                // auto-fit needs as its reference, and re-capturing here is what stops repeated fits
+                // from drifting away from anything anyone chose.
+                Layout.CaptureScaleBase();
+                pendingScaleStep = -1;
+                SingleComposer?.GetDynamicText("layoutguiscaletext")?.SetNewText(GuiScaleText());
+            }, 250);
+
+            return true;
+        }
+
+        string GuiScaleText() => ScaleText(RuntimeEnv.GUIScale > 0 ? RuntimeEnv.GUIScale : 1);
+
+        string ScaleText(double scale) =>
+            $"{scale:0.###}x  ({capi.Render.FrameWidth}x{capi.Render.FrameHeight})";
+
+        bool OnRescueOffscreen()
+        {
+            if (Layout == null) return true;
+            int n = Layout.RescueOffscreen();
+            notice = n == 0 ? "Every open window is already on screen."
+                            : n == 1 ? "Brought 1 window back on screen."
+                                     : $"Brought {n} windows back on screen.";
+            SingleComposer?.GetDynamicText("layoutstatus")?.SetNewText(LayoutStatusText());
+            Recompose();
             return true;
         }
 

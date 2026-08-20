@@ -120,7 +120,13 @@ namespace PinMatrix
                 // button windows are the exception: they are HUDs so they do not steal focus or the
                 // mouse grab during normal play, but they are ours to move and the player expects
                 // them to snap like anything else.
-                if (gui.DialogType != EnumDialogType.Dialog && !(gui is HudPinMatrixButtonWindow)) continue;
+                //
+                // Except the floating tools window, which opts out via Snappable. It only exists
+                // while this grid is up, so making it snappable would mean the tools for arranging
+                // windows were themselves a window to arrange — and it would sit in a cell the
+                // player wanted for something else.
+                if (gui.DialogType != EnumDialogType.Dialog &&
+                    !(gui is HudPinMatrixButtonWindow bw && bw.Snappable)) continue;
 
                 foreach (var pair in gui.Composers)
                 {

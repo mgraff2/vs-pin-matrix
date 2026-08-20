@@ -273,8 +273,12 @@ namespace PinMatrix
             ShowConfirm(new PendingBulk
             {
                 Title = $"Recolor {changed.Count} pins to {WpCommands.ColorHex(color)}?",
+                TitleSwatch = color,
                 ConfirmText = $"Recolor {changed.Count} pins",
+                // The hex stays in the text — it is what you would copy or type — and the chip beside
+                // it is what you actually read. The two are the same fact said twice, on purpose.
                 Lines = changed.Select(r => $"{Disp(r.Wp)}: {WpCommands.ColorHex(r.Wp.Color)} -> {WpCommands.ColorHex(color)}").ToArray(),
+                LineSwatches = changed.Select(r => r.Wp.Color).ToArray(),
                 Execute = () => ExecModify(targets, $"Recolor {changed.Count} pins", $"Recolored {changed.Count} pins."),
             });
         }
@@ -444,6 +448,53 @@ namespace PinMatrix
             Recompose();
         }
 
+        const string PickerSwatchKey = "pickerswatch";
+        const string NewPinSwatchKey = "newpinswatch";
+
+        void RedrawSwatch(string key) => SingleComposer?.GetCustomDraw(key)?.Redraw();
+
+        /// <summary>
+        /// The colour a screen would actually apply right now: the hex box when it holds a complete
+        /// value, otherwise the palette selection. Exactly the precedence the Save handlers use, and
+        /// it has to stay that way — a chip that disagreed with what pressing the button does would
+        /// be worse than no chip at all.
+        /// </summary>
+        static int? EffectiveColor(string hex, int idx, int[] palette)
+        {
+            string body = (hex ?? "").Trim().TrimStart('#');
+            if (body.Length == 6 &&
+                int.TryParse(body, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out int rgb))
+            {
+                return rgb;
+            }
+            if (idx >= 0 && idx < palette.Length) return palette[idx] & 0xFFFFFF;
+            return null;
+        }
+
+        int? PickerEffectiveColor() => EffectiveColor(pickerHex, pickerColorIdx, svc.PaletteColors());
+        int? NewPinEffectiveColor() => EffectiveColor(npHex, npColorIdx, svc.PaletteColors());
+
+        /// <summary>Paints one chip, or a hollow outline when nothing is chosen yet.</summary>
+        static void PaintSwatch(Context ctx, int? rgb)
+        {
+            double size = GuiElement.scaled(20);
+            double y = GuiElement.scaled(2);
+            if (rgb.HasValue)
+            {
+                ctx.SetSourceRGBA(((rgb.Value >> 16) & 0xFF) / 255.0, ((rgb.Value >> 8) & 0xFF) / 255.0,
+                                  (rgb.Value & 0xFF) / 255.0, 1);
+                ctx.Rectangle(0, y, size, size);
+                ctx.FillPreserve();
+            }
+            else
+            {
+                ctx.Rectangle(0, y, size, size);
+            }
+            ctx.SetSourceRGBA(0, 0, 0, 0.65);
+            ctx.LineWidth = GuiElement.scaled(1);
+            ctx.Stroke();
+        }
+
         void ComposeSetColor(GuiComposer c)
         {
             var font = CairoFont.WhiteSmallText();
@@ -451,11 +502,14 @@ namespace PinMatrix
             double y = 42;
             c.AddStaticText($"Pick a color for the {selectedKeys.Count} selected pins:", font, EB(4, y, DW, 25));
             y += 30;
-            c.AddColorListPicker(colors, i => { pickerColorIdx = i; }, EB(4, y, 27, 27), 750, "colorpicker");
+            c.AddColorListPicker(colors, i => { pickerColorIdx = i; RedrawSwatch(PickerSwatchKey); }, EB(4, y, 27, 27), 750, "colorpicker");
             y += 40 * (int)Math.Ceiling(colors.Length * 31.0 / 750) + 20;
             c.AddStaticText("...or hex", font, EB(4, y + 4, 70, 25));
-            c.AddTextInput(EB(80, y, 130, 28), t => pickerHex = t, font, "hex");
-            c.AddStaticText("(e.g. #ff8800 — overrides the palette choice)", font, EB(220, y + 4, 420, 25));
+            c.AddTextInput(EB(80, y, 130, 28), t => { pickerHex = t; RedrawSwatch(PickerSwatchKey); }, font, "hex");
+            // Every hex box in this mod carries a chip — the Map options screens set that pattern,
+            // and a box that shows only six characters of the answer is the thing being fixed here.
+            c.AddDynamicCustomDraw(EB(216, y + 1, 26, 26), (ctx, s, b) => PaintSwatch(ctx, PickerEffectiveColor()), PickerSwatchKey);
+            c.AddStaticText("(e.g. #ff8800 — overrides the palette choice)", font, EB(250, y + 4, 400, 25));
             y += 44;
             c.AddSmallButton("Preview changes", () => { OnSetColorNext(); return true; }, EB(4, y, 150, 30));
             c.AddSmallButton("Cancel", () => { BackToMatrix(); return true; }, EB(160, y, 90, 30));
@@ -524,12 +578,36 @@ namespace PinMatrix
             var font = CairoFont.WhiteSmallText();
             double y = 42;
 
-            c.AddStaticText(pending.Title, CairoFont.WhiteSmallishText(), EB(4, y, DW, 28));
+            if (pending.TitleSwatch.HasValue)
+            {
+                c.AddRichtext(
+                    $"<{ColorSwatchComponent.TagName} color=\"{WpCommands.ColorHex(pending.TitleSwatch.Value)}\"/> "
+                    + WpCommands.VtmlEscape(pending.Title),
+                    CairoFont.WhiteSmallishText(), EB(4, y, DW, 28));
+            }
+            else
+            {
+                c.AddStaticText(pending.Title, CairoFont.WhiteSmallishText(), EB(4, y, DW, 28));
+            }
             y += 32;
             if (pending.Warning != null)
             {
-                c.AddStaticText(pending.Warning, font.Clone().WithColor(GuiStyle.ErrorTextColor), EB(4, y, DW, 42));
-                y += 46;
+                // MEASURED, not guessed. AddStaticText wraps rather than ellipsizing, and this box
+                // used to be a flat 42px — room for two lines. The same-spot warning runs to four at
+                // this width, so its last two lines were painted straight over the list underneath.
+                // The height of wrapped text is a question only the font can answer, so ask it.
+                //
+                // GetMultilineTextHeight works in scaled pixels like everything Cairo touches, and
+                // ElementBounds are unscaled, so the answer has to come back through GUIScale.
+                var warnFont = font.Clone().WithColor(GuiStyle.ErrorTextColor);
+                float scale = RuntimeEnv.GUIScale;
+                if (scale <= 0) scale = 1;
+                double warnH = capi.Gui.Text.GetMultilineTextHeight(warnFont, pending.Warning,
+                                   GuiElement.scaled(DW - 8)) / scale;
+                warnH = Math.Max(24, Math.Ceiling(warnH));
+
+                c.AddStaticText(pending.Warning, warnFont, EB(4, y, DW - 8, warnH));
+                y += warnH + 8;
             }
 
             double tableH = ConfPageSize * ConfRowH;
@@ -539,9 +617,11 @@ namespace PinMatrix
             y += tableH + 8;
 
             int maxConfPage = Math.Max(0, (pending.Lines.Length - 1) / ConfPageSize);
-            c.AddSmallButton("< Prev", () => { if (confPage > 0) { confPage--; RedrawConfirm(); } return true; }, EB(4, y, 78, 26));
-            c.AddDynamicText($"Page {confPage + 1}/{maxConfPage + 1}", font.Clone().WithOrientation(EnumTextOrientation.Center), EB(86, y + 4, 110, 24), "confpage");
-            c.AddSmallButton("Next >", () => { if (confPage < maxConfPage) { confPage++; RedrawConfirm(); } return true; }, EB(200, y, 78, 26));
+            c.AddSmallButton("<<", () => { int t = Math.Max(0, confPage - PageJump); if (t != confPage) { confPage = t; RedrawConfirm(); } return true; }, EB(4, y, 40, 26));
+            c.AddSmallButton("< Prev", () => { if (confPage > 0) { confPage--; RedrawConfirm(); } return true; }, EB(48, y, 78, 26));
+            c.AddDynamicText($"Page {confPage + 1}/{maxConfPage + 1}", font.Clone().WithOrientation(EnumTextOrientation.Center), EB(130, y + 4, 110, 24), "confpage");
+            c.AddSmallButton("Next >", () => { if (confPage < maxConfPage) { confPage++; RedrawConfirm(); } return true; }, EB(244, y, 78, 26));
+            c.AddSmallButton(">>", () => { int t = Math.Min(maxConfPage, confPage + PageJump); if (t != confPage) { confPage = t; RedrawConfirm(); } return true; }, EB(326, y, 40, 26));
 
             y += 36;
             c.AddSmallButton("Cancel", () =>
@@ -583,9 +663,27 @@ namespace PinMatrix
                     ctx.Rectangle(0, i * rh, GuiElement.scaled(DW), rh);
                     ctx.Fill();
                 }
-                string t = Trunc(font, pending.Lines[start + i], GuiElement.scaled(DW - 16));
+                double textX = GuiElement.scaled(8);
+                if (pending.LineSwatches != null && start + i < pending.LineSwatches.Length)
+                {
+                    double size = GuiElement.scaled(12);
+                    double cy = i * rh + (rh - size) / 2;
+                    int rgb = pending.LineSwatches[start + i];
+                    ctx.SetSourceRGBA(((rgb >> 16) & 0xFF) / 255.0, ((rgb >> 8) & 0xFF) / 255.0,
+                                      (rgb & 0xFF) / 255.0, 1);
+                    ctx.Rectangle(textX, cy, size, size);
+                    ctx.FillPreserve();
+                    ctx.SetSourceRGBA(0, 0, 0, 0.65);
+                    ctx.LineWidth = GuiElement.scaled(1);
+                    ctx.Stroke();
+                    textX += size + GuiElement.scaled(6);
+                }
+
+                // Truncation has to know about the chip, or a long line runs off the right edge by
+                // exactly the width the chip pushed it.
+                string t = Trunc(font, pending.Lines[start + i], GuiElement.scaled(DW - 8) - textX);
                 font.SetupContext(ctx);
-                capi.Gui.Text.DrawTextLine(ctx, font, t, GuiElement.scaled(8), i * rh + GuiElement.scaled(2), false);
+                capi.Gui.Text.DrawTextLine(ctx, font, t, textX, i * rh + GuiElement.scaled(2), false);
             }
         }
 
@@ -666,10 +764,11 @@ namespace PinMatrix
 
             c.AddStaticText("Color:", font, EB(4, y + 4, 50, 25));
             y += 28;
-            c.AddColorListPicker(colors, i => { npColorIdx = i; npHex = ""; SingleComposer?.GetTextInput("nphex")?.SetValue(""); }, EB(4, y, 27, 27), 750, "npcolors");
+            c.AddColorListPicker(colors, i => { npColorIdx = i; npHex = ""; SingleComposer?.GetTextInput("nphex")?.SetValue(""); RedrawSwatch(NewPinSwatchKey); }, EB(4, y, 27, 27), 750, "npcolors");
             y += 40 * (int)Math.Ceiling(colors.Length * 31.0 / 750) + 16;
             c.AddStaticText("...or hex", font, EB(4, y + 4, 70, 25));
-            c.AddTextInput(EB(80, y, 130, 28), t => npHex = t, font, "nphex");
+            c.AddTextInput(EB(80, y, 130, 28), t => { npHex = t; RedrawSwatch(NewPinSwatchKey); }, font, "nphex");
+            c.AddDynamicCustomDraw(EB(216, y + 1, 26, 26), (ctx, s, b) => PaintSwatch(ctx, NewPinEffectiveColor()), NewPinSwatchKey);
             y += 44;
 
             c.AddSmallButton(newPinIsMove ? "Preview move" : "Create pin", () => { OnNewPinSave(); return true; }, EB(4, y, 150, 32));
@@ -774,10 +873,12 @@ namespace PinMatrix
 
             y += tableH + 8;
             int maxBinPage = Math.Max(0, (binView.Count - 1) / PageSize);
-            c.AddSmallButton("< Prev", () => { if (binPage > 0) { binPage--; UpdateBinDynamic(); } return true; }, EB(4, y, 78, 26));
-            c.AddDynamicText($"Page {binPage + 1}/{maxBinPage + 1}", font.Clone().WithOrientation(EnumTextOrientation.Center), EB(86, y + 4, 110, 24), "binpage");
-            c.AddSmallButton("Next >", () => { if (binPage < maxBinPage) { binPage++; UpdateBinDynamic(); } return true; }, EB(200, y, 78, 26));
-            c.AddStaticText("Click rows to select. Restored pins are re-created as new waypoints.", font, EB(290, y + 4, DW - 290, 24));
+            c.AddSmallButton("<<", () => { int t = Math.Max(0, binPage - PageJump); if (t != binPage) { binPage = t; UpdateBinDynamic(); } return true; }, EB(4, y, 40, 26));
+            c.AddSmallButton("< Prev", () => { if (binPage > 0) { binPage--; UpdateBinDynamic(); } return true; }, EB(48, y, 78, 26));
+            c.AddDynamicText($"Page {binPage + 1}/{maxBinPage + 1}", font.Clone().WithOrientation(EnumTextOrientation.Center), EB(130, y + 4, 110, 24), "binpage");
+            c.AddSmallButton("Next >", () => { if (binPage < maxBinPage) { binPage++; UpdateBinDynamic(); } return true; }, EB(244, y, 78, 26));
+            c.AddSmallButton(">>", () => { int t = Math.Min(maxBinPage, binPage + PageJump); if (t != binPage) { binPage = t; UpdateBinDynamic(); } return true; }, EB(326, y, 40, 26));
+            c.AddStaticText("Click rows to select. Restored pins are re-created as new waypoints.", font, EB(374, y + 4, DW - 374, 24));
         }
 
         void UpdateBinDynamic()

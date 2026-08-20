@@ -21,8 +21,24 @@ namespace PinMatrix
     public class PendingBulk
     {
         public string Title;
+
+        /// <summary>
+        /// Colour to paint as a swatch beside the title, or null. A confirmation that names a colour
+        /// only in hex asks the player to decode it before agreeing to it, which is the one moment
+        /// they most need to see what they are about to get.
+        /// </summary>
+        public int? TitleSwatch;
+
         public string Warning;
         public string[] Lines;
+
+        /// <summary>
+        /// One chip per line, painted before its text, or null for a list that needs none. Used by
+        /// the recolour preview to show each pin's *current* colour: the target is the same on every
+        /// row and is already up in the title, so the per-row fact worth showing is what is being
+        /// replaced. Shorter than Lines is fine — a row past the end simply gets no chip.
+        /// </summary>
+        public int[] LineSwatches;
         public string ConfirmText;
         public Action Execute;
         public PmScreen ReturnScreen = PmScreen.Matrix;
@@ -80,6 +96,7 @@ namespace PinMatrix
         public LayoutManager Layout;
         /// <summary>Trader auto-marker service; set by the mod system after construction.</summary>
         public TraderMarkers Traders;
+        public HertyCupMarkers HertyCups;
         /// <summary>Translocator path service; set by the mod system after construction.</summary>
         public TranslocatorPaths TlPaths;
         public PinMatrixModSystem ModSystem;
@@ -719,13 +736,20 @@ namespace PinMatrix
             // by, so the tail of each label - the count - is clipped unless the element's own width
             // already covers glyph + text + count + that offset. -1 preselects nothing: index 0
             // would tick the first entry's checkbox without actually filtering on it.
+            //
+            // Both dropdowns are LABELLED, and that is not decoration: a multi-select dropdown with
+            // nothing selected renders completely blank (GuiElementDropDown builds its closed text
+            // from the selected indices and there is no placeholder to set), so unlabelled they read
+            // as two empty boxes that do not say what they would filter. The words match the Pin sets
+            // screen exactly, because it is the same control on the same values.
             c.AddStaticText("Search", font, EB(4, y + 4, 52, 25));
             c.AddTextInput(EB(58, y, 124, 28), OnSearchChanged, font, "search");
-            c.AddMultiSelectDropDown(filterColorHexes, ColorFilterLabels(), -1, OnColorFilterChanged, EB(190, y, 200, 28), "colorfilter");
-            c.AddMultiSelectDropDown(filterIconCodes, IconFilterLabels(), -1, OnIconFilterChanged, EB(396, y, 170, 28), "iconfilter");
-            c.AddSwitch(OnPinnedOnlyToggled, EB(574, y, 28, 28), "pinnedonly", 25, 3);
-            c.AddStaticText("Pinned only", font, EB(606, y + 4, 110, 25));
-            c.AddSmallButton(VisFilterLabel(), OnVisFilterClicked, EB(744, y, 148, 28), EnumButtonStyle.Small);
+            c.AddStaticText("Colours", font, EB(190, y + 4, 68, 25));
+            c.AddMultiSelectDropDown(filterColorHexes, ColorFilterLabels(), -1, OnColorFilterChanged, EB(262, y, 200, 28), "colorfilter");
+            c.AddStaticText("Icons", font, EB(470, y + 4, 50, 25));
+            c.AddMultiSelectDropDown(filterIconCodes, IconFilterLabels(), -1, OnIconFilterChanged, EB(524, y, 170, 28), "iconfilter");
+            c.AddSwitch(OnPinnedOnlyToggled, EB(702, y, 28, 28), "pinnedonly", 25, 3);
+            c.AddStaticText("Pinned only", font, EB(734, y + 4, 110, 25));
 
             // Filter row two - distance, then what to do with a filter once you have one.
             y += 34;
@@ -735,6 +759,9 @@ namespace PinMatrix
             c.AddSmallButton("Next pin", OnRadiusNextPin, EB(268, y, 81, 28), EnumButtonStyle.Small);
             c.AddSmallButton("Save as set...", OnSaveFilterAsSet, EB(358, y, 130, 28), EnumButtonStyle.Small);
             c.AddSmallButton("Clear filters", OnClearFilters, EB(494, y, 116, 28), EnumButtonStyle.Small);
+            // Moved down from row one to make room for the two dropdown labels. It belongs here
+            // anyway: this row is the filter's own controls, and hidden-vs-visible is one of them.
+            c.AddSmallButton(VisFilterLabel(), OnVisFilterClicked, EB(618, y, 148, 28), EnumButtonStyle.Small);
 
             // selection row
             y += 34;
@@ -769,14 +796,29 @@ namespace PinMatrix
 
             // pagination + notice
             y += tableH + 8;
-            c.AddSmallButton("< Prev", OnPrevPage, EB(4, y, 78, 26));
-            c.AddDynamicText(PageText(), font.Clone().WithOrientation(EnumTextOrientation.Center), EB(86, y + 4, 110, 24), "pageinfo");
-            c.AddSmallButton("Next >", OnNextPage, EB(200, y, 78, 26));
+            // Ends outermost, then the ten-page jumps, then single steps: the further from the
+            // middle a button is, the further it moves you.
+            c.AddSmallButton("|<", OnFirstPage, EB(4, y, 40, 26));
+            c.AddSmallButton("<<", OnFirstJump, EB(48, y, 40, 26));
+            c.AddSmallButton("< Prev", OnPrevPage, EB(92, y, 78, 26));
+            c.AddDynamicText(PageText(), font.Clone().WithOrientation(EnumTextOrientation.Center), EB(174, y + 4, 110, 24), "pageinfo");
+            c.AddSmallButton("Next >", OnNextPage, EB(288, y, 78, 26));
+            c.AddSmallButton(">>", OnLastJump, EB(370, y, 40, 26));
+            c.AddSmallButton(">|", OnLastPage, EB(414, y, 40, 26));
+
+            var tipFont = CairoFont.WhiteDetailText();
+            c.AddHoverText("Back to the first page.", tipFont, 200, EB(4, y, 40, 26).FlatCopy(), "tipfirst");
+            c.AddHoverText($"Jump {PageJump} pages. Stops at the first page rather than running past it.",
+                tipFont, 260, EB(48, y, 40, 26).FlatCopy(), "tipjumpback");
+            c.AddHoverText($"Jump {PageJump} pages. Stops at the last page rather than running past it.",
+                tipFont, 260, EB(370, y, 40, 26).FlatCopy(), "tipjumpfwd");
+            c.AddHoverText("On to the last page.", tipFont, 200, EB(414, y, 40, 26).FlatCopy(), "tiplast");
+
             // Standing count of switched-off pins, kept out of the status line (which has no room)
             // and off the transient notice: hidden pins draw nowhere on the map, so the one thing
             // that must never happen is a player forgetting they have any.
-            c.AddDynamicText(HiddenText(), font, EB(286, y + 4, 130, 24), "hiddeninfo");
-            c.AddDynamicText(notice, font.Clone().WithOrientation(EnumTextOrientation.Right), EB(420, y + 4, DW - 420, 24), "notice");
+            c.AddDynamicText(HiddenText(), font, EB(462, y + 4, 130, 24), "hiddeninfo");
+            c.AddDynamicText(notice, font.Clone().WithOrientation(EnumTextOrientation.Right), EB(600, y + 4, DW - 600, 24), "notice");
 
             // Action row A - the mutations, which all go through the confirmation screen.
             y += 34;
@@ -1174,6 +1216,9 @@ namespace PinMatrix
             return "No waypoints received from the server yet — a resync was requested; 'Refresh' asks again.";
         }
 
+        /// <summary>How far << and >> move. Ten is a screenful of screenfuls, which is the point.</summary>
+        public const int PageJump = 10;
+
         bool OnPrevPage()
         {
             if (page > 0) { page--; UpdateMatrixDynamic(); }
@@ -1183,6 +1228,35 @@ namespace PinMatrix
         bool OnNextPage()
         {
             if (page < MaxPage) { page++; UpdateMatrixDynamic(); }
+            return true;
+        }
+
+        // Clamped, never wrapped: a jump that ran off the end and reappeared at the other one would
+        // be indistinguishable from the list having changed under you.
+
+        bool OnFirstPage()
+        {
+            if (page != 0) { page = 0; UpdateMatrixDynamic(); }
+            return true;
+        }
+
+        bool OnLastPage()
+        {
+            if (page != MaxPage) { page = MaxPage; UpdateMatrixDynamic(); }
+            return true;
+        }
+
+        bool OnFirstJump()
+        {
+            int target = Math.Max(0, page - PageJump);
+            if (target != page) { page = target; UpdateMatrixDynamic(); }
+            return true;
+        }
+
+        bool OnLastJump()
+        {
+            int target = Math.Min(MaxPage, page + PageJump);
+            if (target != page) { page = target; UpdateMatrixDynamic(); }
             return true;
         }
 

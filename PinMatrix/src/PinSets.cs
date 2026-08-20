@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 using Vintagestory.API.Client;
 using Vintagestory.GameContent;
 
@@ -89,6 +90,43 @@ namespace PinMatrix
             if (PinnedOnly) parts.Add("pinned only");
             return string.Join(", ", parts);
         }
+
+        /// <summary>
+        /// The same summary for a rich-text element, with the colours drawn as swatches instead of
+        /// spelled out as hex.
+        ///
+        /// "colour #8a6fe8" is a fact you have to decode; a swatch is the fact itself. The plain
+        /// <see cref="CriteriaSummary"/> stays for tooltips and anywhere else that takes no markup —
+        /// the two must keep saying the same thing, so they are written next to each other.
+        /// Escaped, because a set's name filter is player text and could contain markup.
+        /// </summary>
+        public string CriteriaSummaryVtml()
+        {
+            if (MatchesEverything) return "every pin";
+
+            var parts = new List<string>();
+            if (!string.IsNullOrWhiteSpace(Search)) parts.Add($"name has \"{WpCommands.VtmlEscape(Search)}\"");
+            if (Icons.Count > 0) parts.Add(Icons.Count == 1 ? $"icon {WpCommands.VtmlEscape(Icons[0])}" : $"{Icons.Count} icons");
+
+            if (Colors.Count > 0)
+            {
+                // A cap, because a set filtering on a dozen colours would push everything after it
+                // off the row. Past the cap the count carries the rest.
+                const int MaxSwatches = 6;
+                var sb = new StringBuilder(Colors.Count == 1 ? "colour " : "colours ");
+                for (int i = 0; i < Colors.Count && i < MaxSwatches; i++)
+                {
+                    sb.Append('<').Append(ColorSwatchComponent.TagName)
+                      .Append(" color=\"").Append(WpCommands.VtmlEscape(Colors[i])).Append("\"/>");
+                }
+                if (Colors.Count > MaxSwatches) sb.Append(" +").Append(Colors.Count - MaxSwatches);
+                parts.Add(sb.ToString());
+            }
+
+            if (PinnedOnly) parts.Add("pinned only");
+            return string.Join(", ", parts);
+        }
+
 
         public PinSet Copy() => new PinSet
         {

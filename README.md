@@ -5,7 +5,7 @@ Spec: [pin-matrix-mod-spec.md](pin-matrix-mod-spec.md).
 
 ## Installed & ready
 
-`dist/pinmatrix_1.6.0.zip` is already copied to `%APPDATA%\VintagestoryData\Mods\`. Launch the game, load a world, open the map (**M**) and click the **Pin Matrix Editor** button (top right). Optionally bind a hotkey to "Pin Matrix (waypoint manager)" in Settings → Controls — it ships unbound.
+`dist/pinmatrix_1.7.0.zip` is already copied to `%APPDATA%\VintagestoryData\Mods\`. Launch the game, load a world, open the map (**M**) and click the **Pin Matrix Editor** button (top right). Optionally bind a hotkey to "Pin Matrix (waypoint manager)" in Settings → Controls — it ships unbound.
 
 ## Building
 
@@ -174,6 +174,58 @@ pre-release checklist for what the server can't see:
 9. **Back out of every screen** (1.5.0 fix): **Map windows layout** must return to the map — by its
    **Back to map** button *and* by the title-bar close — never to the waypoint manager. Every other
    screen (Map options, Recycle bin, Export/Import, Share) must still return to the manager.
+10. **Marching ants on recent paths** (the headless test cannot see any of this). Take a
+    translocator hop with translocator paths on, then open the map: the hop you just took must be
+    banded in the Recent and Path colours, crawling *towards the pad you arrived at*. Then check
+    the two things the clip exists for — **zoom right in** until both pads are off opposite edges
+    of the map frame (the line must stay banded all the way across the view, not stop dead
+    mid-screen, and the frame rate must not move), and **pan the map** (the bands must stay put on
+    the line and travel with it, not slide along it). Wait out `TranslocatorRecentMinutes` and
+    confirm the line reverts to a plain single-colour one. Set speed to 0 for static stripes, and
+    turn the switch off for the old flat line.
+
+11. **Herty cup markers** (needs the Herty Cups mod; the headless test cannot see any of it). Turn
+    **Mark Herty cups I place or collect from** on, then: place a cup and confirm one waypoint
+    appears on it titled after the wood ("Herty cup: Pine"); right-click that same cup to collect
+    and confirm a *second* waypoint is **not** added; break it, place another a few blocks away and
+    confirm that one is marked separately. Right-click a cup someone else placed — it must be
+    marked too, because you have now collected from it. Then confirm the negatives: walking past a
+    cup marks nothing, right-clicking a plain log or a chest marks nothing, and with the switch off
+    nothing is marked at all. On a server, confirm cups placed by other players out of your reach
+    never appear.
+
+12. **Interface scale follows the screen** (nothing here is visible to the headless test). Turn on
+    **Fit interface scale to the screen** on Map options, note the reference it shows, then resize
+    the game window (or reconnect at a lower resolution): the GUI scale must change, a chat line must
+    say what it did, and the windows must end up taking roughly the same share of the screen as
+    before. Go back to the original size and confirm the scale returns to **exactly** its old value —
+    that round trip is the whole point of measuring from a fixed reference, and a drifting value
+    means the base is being re-captured when it should not be. Then move the scale slider on the
+    layout screen and confirm the reference updates to what you chose. Drag the slider fast: the
+    readout must follow the handle, but the interface must only rescale once you stop.
+    Then the one that matters most: change the GUI scale in **Vintage Story's own** Settings >
+    Interface, resize the window, and resize back — the scale you set by hand must be what you end up
+    with, not the one it replaced. Do that twice in a row and confirm it does not creep: each answer
+    comes from the reference, never from the previous answer.
+13. **The floating layout tools.** Show the zones: a small window with **Layout Options**, **Rescan
+    HUDs**, **Reset layout** and **Rescue off-screen** must appear, and the Pin Matrix button bar
+    must **not** change size when it does (in tab-row mode, it must not re-stretch either). Drag the
+    tools window over the grid and confirm it does **not** snap to a cell — it stays exactly where
+    you drop it, on or off a cell boundary — and that no assignment for it appears in
+    `.pinmatrix unsnap`. Hide the zones: the tools window must disappear. Show them again: it must
+    come back where you left it, and still be there after a restart. Cycle all four button modes with
+    the zones showing and confirm the tools window is identical in each.
+14. **Rescue off-screen windows.** Drag another mod's window mostly off the right edge, then shrink
+    the game window until it is gone entirely. **Rescue off-screen** (or `.pinmatrix rescue`) must
+    bring it back with its title bar reachable, and report how many it moved. Run it again: it must
+    report zero and move nothing. Confirm it leaves HUDs alone.
+15. **Colours are shown as colours.** Open the editor: the colour filter dropdown must show a
+    swatch, the hex and a count per entry, and list *only* colours your pins use — delete the last
+    pin of some colour and confirm that colour leaves the list. On **Pin sets**, a set filtering on
+    colour must show swatches in its criteria line, not "colour #8a6fe8". Select some pins →
+    **Set colour**: typing a complete hex must light the chip beside the box, clicking a palette
+    colour must move it, and the preview screen must show the target beside its title and each
+    pin's current colour beside its row. Same chip check on **New pin**.
 
 ## Config (`VintagestoryData/ModConfig/pinmatrix.json`)
 
@@ -184,6 +236,10 @@ by location alone; kept far tighter than `TraderMarkerDedupeRadius` because that
 while this one deletes existing pins), `MapButtonRightMargin` / `MapButtonYOffset` (-1 = automatic placement; set both
 to unscaled px from the right/top edges to pin the map-screen button and disable overlap avoidance — use this if
 another map-HUD mod shares the corner and the automatic placement picks a spot you dislike),
+Interface scale: `LayoutAutoScale` (false — re-derive the game's GUI scale when the screen changes size),
+`LayoutBaseScale` / `LayoutBaseScreenW` / `LayoutBaseScreenH` (the reference pairing every fit is measured
+from; 0 = not captured yet, set by moving the scale slider or running `.pinmatrix guiscale`).
+
 `MapButtonShortcutKey` (true — the map button's plain `P` shortcut; it already stands down while any text
 field has focus, so set it false only to free the key up entirely), `MapLayoutShortcutKey` (true — the same
 thing for the `Z` zone-overlay shortcut).
@@ -200,7 +256,16 @@ already-marked test, deliberately loose because traders wander around their cart
 Translocator paths: `TranslocatorPathsEnabled` (false), `TranslocatorMinJump` (40 blocks in one tick before a
 move counts as a possible hop), `TranslocatorDedupeRadius` (6), `TranslocatorMarkerIcon` (`spiral`),
 `TranslocatorMarkerPinned` (false), `TranslocatorMarkerColor` (`#8A6FE8`), `TranslocatorRecentColor` (`#00E5FF`),
-`TranslocatorRecentMinutes` (20, 0 = never highlight) and `TranslocatorLineThickness` (2.5 px).
+`TranslocatorRecentMinutes` (20, 0 = never highlight), `TranslocatorLineThickness` (2.5 px),
+`TranslocatorRecentAnts` (true — band a recent path in the Recent and Path colours and crawl it towards the pad
+you arrived at), `TranslocatorAntsDashPx` (9, clamped 3-40 — one band's width) and `TranslocatorAntsSpeed`
+(16 px/s, clamped 0-200 — 0 leaves static stripes).
+
+Herty cups (requires the Herty Cups mod): `HertyCupMarkersEnabled` (false), `HertyCupMarkerIcon` (`vessel`),
+`HertyCupMarkerPinned` (false), `HertyCupMarkerColor` (`#C98B3A`), `HertyCupMarkerTitlePrefix` (`"Herty cup: "` —
+changing it after the fact orphans the markers already placed, as the trader prefix does) and
+`HertyCupDedupeRadius` (1.5 blocks — far tighter than the trader radius because a cup never moves, and two cups
+on neighbouring faces of one trunk are two real cups a block apart).
 
 Pin sets (1.6.0): `PinSets` (empty) — saved filters, each with `Name`, `Search`, `Icons`, `Colors`, `PinnedOnly`,
 `ShowButton` (true — whether it gets a row in the map's pin-set panel) and `ButtonIcon` (empty = a plain colour

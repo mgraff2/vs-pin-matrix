@@ -2,6 +2,130 @@
 
 All notable changes to Pin Matrix are documented here.
 
+## [1.7.0] — 2026-08-20
+
+### Added
+- **Herty cups get marked as you work them.** With **Mark Herty cups I place or collect from** on
+  (Map options, off by default), putting up a Herty cup or taking resin out of one drops a waypoint
+  on it, titled after the tree it is tapping — "Herty cup: Pine". Requires the Herty Cups mod;
+  without it nothing in the world can match and the feature is simply inert.
+  - **Both triggers are things *you* did, and that is the design, not a shortcut.** A client is
+    never told who placed a block — the game's only block signal carries a position and the old
+    block and no player at all — and a Herty cup stores no owner, so a mod like this cannot scan
+    for cups and show only yours. On a server that scan would carpet the map with other people's
+    taps. Marking what you have actually handled gets your cups by construction, and picks up ones
+    you did not place but have started collecting from, which is the more useful answer anyway.
+  - Nothing is marked for a cup you merely walk past, and a cup that already has a marker within
+    the skip radius does not get a second one.
+- **The layout tools are their own floating window now.** Showing the zones puts a small window on
+  screen with **Layout Options**, **Rescan HUDs**, **Reset layout** and **Rescue off-screen** on it.
+  Drag it anywhere by its Move bar and it stays there; hide the zones and it goes away with them.
+  - **It is deliberately not part of the grid.** It cannot be snapped to a cell and no zone is
+    remembered for it — the tools you use to arrange windows should never become another window to
+    arrange, and they should not occupy a cell you wanted for something else.
+  - **The button bar no longer changes size when you show the zones.** Layout Options used to appear
+    inside it, so turning the grid on resized the bar under your cursor — and in tab-row mode
+    re-stretched it across the row in the middle of arranging things. The bar is now just
+    **Pin Matrix Editor** and **Layout Zones**, and it keeps its size whatever the zones are doing.
+- **The interface can follow the screen it is on.** Two new controls for anyone who moves between a
+  desk monitor and a remote session at a lower resolution:
+  - **Fit interface scale to the screen** (Map options, off by default) re-derives the game's GUI
+    scale whenever the screen changes size. No window in Vintage Story resizes itself, so on a screen
+    half as wide every dialog takes twice the share of it, and the only fix is the GUI scale setting
+    — which means a trip into Settings on every switch. This does it for you.
+  - It measures from a **reference**: the scale you last set by hand and the screen you set it on.
+    Going to a smaller screen and back returns you exactly where you were, because each answer comes
+    from that fixed reference rather than from the previous answer — which would drift a little
+    further every time you switched.
+  - **A scale you set yourself always wins, wherever you set it.** Change the GUI scale in Vintage
+    Story's own Settings > Interface and that becomes the new reference — the next resolution change
+    fits around *your* size instead of quietly restoring the one you replaced. Set 1.5x, reconnect at
+    a smaller resolution, come back, and 1.5x is what you get.
+  - **An interface scale slider** on the Map windows layout screen, the game's own setting and range,
+    right where you are standing when the problem shows up. Moving it sets the reference. Also
+    `.pinmatrix guiscale [value]` for when the screens themselves are too big to read.
+- **"Rescue off-screen" brings lost windows back.** Windows remember absolute positions, so coming
+  back on a smaller screen can leave one entirely outside it with no title bar left to grab. The
+  button on the Map windows layout screen — and `.pinmatrix rescue` in chat — drags every open window
+  back into view, anyone's window and not just ours. Snapped windows were already clamped; this is
+  for all the ones nobody snapped.
+- **Every colour in the editor is now shown as a colour.** The filter dropdown already painted
+  swatches; the places that still spelled colours out as hex do too now — the **Pin sets** list
+  draws a set's colour criteria as swatches instead of "colour #8a6fe8", the recolour confirmation
+  shows the target beside its title and each pin's *current* colour beside its row, and the two
+  "...or hex" boxes on the **Set colour** and **New pin** screens have a live chip like every hex
+  box on the Map options screens already did. The hex text stays wherever it was — it is what you
+  would copy or type — the chip is simply the part you can read at a glance.
+  - The colour filter continues to list **only the colours your pins actually use**, hue-sorted with
+    a live count each, and drops a colour from the list when the last pin using it goes.
+- **`<<` and `>>` jump ten pages** on the pin table, the confirmation preview and the recycle bin.
+  Clamped at the first and last page rather than wrapping — a jump that ran off the end and
+  reappeared at the other one is indistinguishable from the list having changed under you.
+- **A recently-used translocator path crawls.** The hop you just took is now drawn as alternating
+  bands of the Recent colour and the Path colour that march from the pad you left towards the pad
+  you arrived at — so the line shows the *direction* you travelled, which a flat line never could,
+  and stays legible where a single hue lands on similarly-coloured terrain. Band width and crawl
+  speed are on the **Map options** screen beside the path colours; speed 0 leaves them as static
+  stripes for anyone who would rather nothing moved on their map, and the switch turns the whole
+  thing off. Only *recent* paths are banded — every other line is still one draw call, so a large
+  translocator network costs exactly what it did before.
+
+### Changed
+- **The Map options screen is a third shorter.** It had grown past the height of a 1080p screen at
+  anything above a modest GUI scale, which is a poor look on the screen that now hosts the fix for
+  small screens.
+  - **Colour per specialisation folds away**, shut by default. Nine colours is the longest block on
+    the screen and the one least often touched. **Scan for traders now** stayed outside where it can
+    be reached without unfolding anything; **Reset all colours** moved inside, since it resets what
+    the fold contains.
+  - **Every trader colour is a dropdown of drawn colours** instead of a hex box: its own default
+    first, then the game's waypoint palette, then any custom hex already in your config, so opening
+    the screen can never silently change one. Picking the entry marked *(default)* removes the
+    override rather than storing it, so that row keeps tracking the Waypointer palette. The separate
+    swatch beside each row is gone — the dropdown paints the colour itself.
+  - **Herty cups gained an icon dropdown** beside the same colour control, listing every waypoint
+    icon the game has, drawn rather than named. The default is `vessel`, vanilla's little cracked pot.
+  - **The four status readouts became tooltips** on their own section headers — traders, translocator
+    paths, Herty cups, window layout — instead of one line along the bottom naming all four at once.
+    A fact about one section is now read where you are already looking.
+- **The zone grid goes up to 50x50**, from 20x20. The overlay draws a lattice rather than a quad per
+  cell, so the finest grid is 102 lines, not 2500 rectangles.
+- **The pin table's colour and icon filters are labelled.** A multi-select dropdown with nothing
+  selected renders completely blank, so unlabelled they read as two empty boxes that never said what
+  they would filter. The visible/hidden button moved to the second filter row to make the room — it
+  belongs there anyway, with the filter's other controls.
+- **The Cell number boxes are gone from the Map windows layout screen.** A grid you drag windows onto
+  does not also need coordinates typed into it. A window nobody has dragged keeps its default corner.
+
+### Fixed
+- **Dragging the button bar onto another row in tab-row mode does something.** It did nothing at all,
+  for two reasons stacked on top of each other. The bar is re-placed onto its strip on every watcher
+  tick, which reset its position between every pair of drag samples — so the overlay, which decides
+  something is being dragged by comparing positions against an at-press baseline, never saw it move
+  and never registered a drop. With that fixed the row *was* being recorded, but the bar still would
+  not go there: a movable title bar restores its window to the stored position on every compose, and
+  the drag had written the dragged position into that store, so the very recompose that moved the bar
+  handed the title bar the old position and it went straight back. It only appeared to work after
+  hiding the zones, because that removed the title bar and ended the tug of war.
+- **Windows keep their place when the grid is resized.** Changing 20x20 to 40x40 sent every snapped
+  window to its old cell *number*, which is a different place — column 16 is four fifths of the way
+  across a 20-wide grid and two fifths of the way across a 40-wide one. Each assignment now remembers
+  the grid it was dropped on and is re-expressed into whatever grid is current, landing on the cell
+  nearest where it actually sat. Keeping the original rather than rewriting it on each resize is what
+  makes it exact: 20 to 4 and back to 20 returns to the column it started on. Windows snapped before
+  this update have no remembered grid and follow the old behaviour once, until they are next dropped.
+- **The Map windows layout screen reported the grid size from one keystroke ago** — typing 40 showed
+  "4 x 20 grid". The status line reads the live grid, but changing the size only *marked* it stale and
+  the rebuild happened on the next tick, after the label had been written. The overlay was a tick
+  behind for the same reason.
+- **The red warning on a confirmation no longer runs over the list below it.** Its box was a fixed two
+  lines, and static text wraps rather than ellipsizing — the same-spot warning is four lines at that
+  width, so the last two were painted straight over the pins. The height is now measured from the text.
+- **The close button on a layout title bar did something.** Vintage Story draws the X whether or not
+  anything is listening, so every drag handle we add has been showing a close button that silently did
+  nothing. Closing one now hides the zones, which is the only thing closing layout-mode furniture can
+  honestly mean.
+
 ## [1.6.0] — 2026-08-20
 
 ### Added

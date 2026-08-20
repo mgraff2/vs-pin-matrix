@@ -36,6 +36,16 @@ namespace PinMatrix
 
         public static string ColorHex(int argb) => "#" + (argb & 0xFFFFFF).ToString("x6");
 
+        /// <summary>
+        /// Makes arbitrary text safe to drop into a VTML string.
+        ///
+        /// Every rich-text label this mod builds mixes markup we wrote with text we did not — pin
+        /// titles, set names, search terms. A title containing a stray angle bracket would otherwise
+        /// be parsed as a tag and swallow the rest of the label.
+        /// </summary>
+        public static string VtmlEscape(string s) =>
+            (s ?? "").Replace("<", "&lt;").Replace(">", "&gt;");
+
         public static string SafeTitle(string title)
         {
             title = (title ?? "").Replace("\r", " ").Replace("\n", " ").Trim();
