@@ -1,27 +1,50 @@
 <!-- Paste into the "changelog" field of the ModDB release. Newest version first;
      keep older entries so the page reads as a history. -->
 
-<p style="font-size: 1.1em;"><strong>1.5.0 &mdash; windows that stay where you put them, and markers that place themselves.</strong> Three additions, each optional and each off until you ask for it: a snap grid for the map screen's windows, automatic trader markers, and translocator paths for the hops you have actually made.</p>
+<p style="font-size: 1.1em;"><strong>1.7.0 &mdash; the interface follows the screen it is on.</strong> Move between a desk monitor and a remote session at a lower resolution and Pin Matrix can re-derive the game&#39;s GUI scale for you, so the windows keep the proportions you chose instead of swallowing a smaller screen. Plus Herty cup markers, translocator paths that show which way you travelled, and a Map options screen a third shorter than it was.</p>
 <table class="stdtable" style="width: 100%;">
 <tbody>
 <tr>
-<td style="width: 26%;"><strong>Map windows layout</strong></td>
-<td>Drag any window onto a grid and it stays there, across resolutions and GUI scales.</td>
+<td style="width: 26%;"><strong>Fit scale to the screen</strong></td>
+<td>Change resolution and the interface keeps its proportions. Go back and you land on exactly the scale you started from.</td>
 </tr>
 <tr>
-<td><strong>Trader markers</strong></td>
-<td>Walk past a trader, get a waypoint coloured by what they deal in.</td>
+<td><strong>Rescue off-screen</strong></td>
+<td>Drags any window that ended up outside the screen back into view &mdash; anyone&#39;s window, not just ours.</td>
 </tr>
 <tr>
-<td><strong>Translocator paths</strong></td>
-<td>Both pads marked, a line between them, and nothing recorded for a pad you only walked past.</td>
+<td><strong>Marching ants</strong></td>
+<td>A translocator hop you just took crawls towards the pad you arrived at, so the line shows direction.</td>
 </tr>
 <tr>
-<td><strong>All three</strong></td>
-<td>Off by default. Switch them on from <strong>Map options...</strong> in the editor.</td>
+<td><strong>Herty cups</strong></td>
+<td>Place a cup or collect from one and it gets a waypoint named after the tree. Needs the Herty Cups mod.</td>
 </tr>
 </tbody>
 </table>
+<h3>1.7.0</h3>
+<ul>
+<li><strong>Fit interface scale to the screen.</strong> No window in Vintage Story resizes itself, so on a screen half as wide every dialog takes twice the share of it &mdash; and the only cure is the GUI scale setting, four clicks deep in Settings. Switch this on (<strong>Map options</strong>, off by default) and the scale is re-derived whenever the screen changes size. It measures from a reference: the scale you last set by hand and the screen you set it on, so going to a smaller screen and back returns you to <em>exactly</em> where you were rather than somewhere close. A scale you set yourself &mdash; including in Vintage Story&#39;s own settings &mdash; becomes the new reference.</li>
+<li><strong>An interface scale control on the layout screen</strong>, so you are not leaving the map to find it. Stepped with arrows rather than dragged: rescaling live under a dragging cursor makes the control you are aiming at move and change size while you aim.</li>
+<li><strong>Rescue off-screen.</strong> Windows remember absolute positions, so coming back on a smaller screen can leave one completely outside it with no title bar left to grab. One button &mdash; or <code>.pinmatrix rescue</code> &mdash; brings every one of them back into view.</li>
+<li><strong>Herty cup markers.</strong> With the Herty Cups mod installed, putting up a cup or taking resin from one drops a waypoint titled after the tree it is tapping. Both triggers are things <em>you</em> did, which is deliberate: a client is never told who placed a block, so marking the cups you have actually handled is the only way to get yours rather than every tap on the server.</li>
+<li><strong>Recently-used translocator paths crawl.</strong> The hop you just took is drawn as alternating bands that march from the pad you left towards the pad you arrived at, so the line shows the direction you travelled &mdash; something a flat line never could. Speed 0 leaves them as static stripes.</li>
+<li><strong>The layout tools are their own floating window.</strong> Show the zones and a small window appears with Layout Options, Rescan HUDs, Reset layout and Rescue off-screen. Drag it anywhere; it goes away with the zones. It deliberately cannot be snapped &mdash; the tools you use to arrange windows should not become another window to arrange.</li>
+<li><strong>The zone grid goes up to 50&times;50</strong>, and windows keep their <em>relative</em> place when you change it: a window four fifths of the way across a 20-wide grid is still four fifths of the way across a 40-wide one.</li>
+<li><strong>The Map options screen is a third shorter.</strong> Trader colours fold away, every colour and icon is a dropdown that draws the actual thing instead of spelling out a hex code, and the status readouts moved into tooltips on their own section headers.</li>
+<li><strong>The pin table gained page jumps</strong> &mdash; <code>|&lt;</code>, <code>&lt;&lt;</code>, <code>&gt;&gt;</code>, <code>&gt;|</code> for first, back ten, forward ten and last &mdash; and its colour and icon filters are now labelled and sorted with the most-used first.</li>
+<li>Fixes: windows now snap in every button mode and the tab row accepts a drag; a wrapped warning no longer paints over the list beneath it; the layout screen no longer reports the grid size from one keystroke ago; and the close button on a layout title bar does something.</li>
+</ul>
+<h3>1.6.0</h3>
+<ul>
+<li><strong>Pin sets &mdash; save a filter, get a map filter.</strong> Filter the table to whatever you like, press <strong>Save as set...</strong>, name it, and it becomes a row in a panel down the right of the world map. Click it to hide everything it matches; click again to bring it all back.</li>
+<li><strong>A set stores the question, not the answer.</strong> The filter is re-evaluated the moment you click, so resin you marked this morning is covered by a set you made last week. Nothing stores a list of pins.</li>
+<li><strong>The panel is a drawer, shut by default</strong>, parked against the map&#39;s right edge as a thin pull. It re-colours while any set is hiding pins, so a filter you left on can never be invisible &mdash; pins missing from the map with nothing explaining why is the one thing this must never do.</li>
+<li><strong>The editor is much less busy.</strong> The 24-per-row grid of every waypoint icon in the game is now a dropdown listing only the icons your pins actually use, each with a live count; six rarely-pressed buttons moved behind <strong>Tools...</strong>; and the explanatory paragraphs moved into tooltips.</li>
+<li><strong>The map&#39;s layer tab reads &quot;Translocator paths&quot;</strong> instead of the raw key it showed before.</li>
+<li><strong>The tab row is chosen by dragging</strong>, not by typing a row number, and that row now refuses other windows &mdash; one dropped there used to end up underneath the button bar, unclickable. <code>.pinmatrix unsnap</code> releases a single window instead of resetting the lot.</li>
+<li>Also ships the 1.5.1 fix: hidden waypoints no longer flash back onto the map while you drag it.</li>
+</ul>
 <h3>1.5.0</h3>
 <ul>
 <li><strong>Map windows layout &mdash; snap your map-screen windows to a grid.</strong> Switch it on in <strong>Map options</strong> and a <strong>Layout Zones (Z)</strong> button joins the map screen. Press it and the screen fills with a grid: drag any window by its title bar, release it on a zone, and its top-left corner snaps there. It stays put, and it comes back to the same place next time you open it.</li>

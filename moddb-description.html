@@ -59,6 +59,16 @@
 </tbody>
 </table>
 <p><small>They all compose &mdash; search inside one icon inside one colour inside 500 blocks &mdash; and every count you see respects the filters above it.</small></p>
+<h3>Pin sets &mdash; save a filter, get a map filter</h3>
+<p>Filter the table to whatever you like &mdash; one icon plus a search word, say &mdash; press <strong>Save as set...</strong>, give it a name, and it becomes a row in a panel down the right-hand side of the world map. Click the row and every pin it matches leaves the map at once; click again and they come back.</p>
+<p>A set stores <em>the question, not the answer</em>. The filter runs again the moment you click it, so resin you marked this morning is covered by a set you made last week. Nothing anywhere stores a list of pins, so a set never quietly stops covering the things you have added since.</p>
+<p>The panel is a drawer and it starts shut &mdash; a 16px pull against the map&#39;s edge, because the free space beside the map is only whatever your screen has left over. While any set is hiding pins the pull re-colours, so a filter you left switched on can never be invisible. Pins missing from your map with nothing on screen explaining why is the one thing this feature exists to prevent.</p>
+
+<h3>An interface that follows the screen it is on</h3>
+<p>Nothing in Vintage Story resizes a dialog. A window is a fixed number of pixels across, so on a screen half as wide it takes twice the share of it &mdash; and the only lever is the game&#39;s GUI scale, four clicks deep in Settings. Anyone who moves between a desk monitor and a remote session at a smaller resolution re-does that by hand every single time.</p>
+<p>Switch on <strong>Fit interface scale to the screen</strong> and Pin Matrix re-derives it for you whenever the screen changes size. It measures from a reference &mdash; the scale you last chose and the screen you chose it on &mdash; so going to a smaller screen and back returns you to <em>exactly</em> the scale you started from, not somewhere near it. Set the scale yourself anywhere, including Vintage Story&#39;s own settings, and that becomes the new reference.</p>
+<p>It is off by default. It writes one of the game&#39;s settings rather than one of ours, and a mod quietly resizing your entire interface had better be something you asked for.</p>
+
 <h3>What each part does</h3>
 <p><small>Click a heading to open it.</small></p>
 <div class="spoiler">
@@ -124,7 +134,7 @@
 <div class="spoiler-toggle" style="font-size: 15px;">Window layout <span style="font-weight: normal; color: var(--color-text-weak);">&mdash; optional: snap the map screen's windows to a grid</span></div>
 <div class="spoiler-text">
 <p>Off until you switch it on, on the <strong>Map options</strong> screen &mdash; a button for a feature you never use is clutter on every map open. Once on, a <strong>Layout Zones (Z)</strong> button joins the map screen: press it and the screen fills with a grid. Drag any window by its title bar, drop it on a zone, and it snaps there &mdash; and comes back to the same place next time it opens.</p>
-<p><strong>You choose the grid.</strong> Anything from 1&times;1 to 20&times;20, split evenly across the screen: coarse for tidy halves and thirds, fine for precise placement on an ultrawide. Column and row numbers run along the edges so you can read a coordinate straight off the screen.</p>
+<p><strong>You choose the grid.</strong> Anything from 1&times;1 to 50&times;50, split evenly across the screen: coarse for tidy halves and thirds, fine for precise placement on an ultrawide. Column and row numbers run along the edges so you can read a coordinate straight off the screen.</p>
 <p><strong>It refuses to bury your HUDs.</strong> Cells sitting under your coordinate readout, hotbar, chat or any mod's HUD are drawn red and will not take a drop, so a snapped window can never land on something you need to read. Untick <strong>Do not cover HUDs</strong> and the whole screen opens up &mdash; the grid itself does not move, so nothing you have already placed shifts.</p>
 <p><strong>Nominate a row as a tab strip</strong> and everything dropped on it spreads evenly across the full width like tabs, re-spacing as things come and go. The Pin Matrix buttons can join the strip, stack in a corner, or float separately &mdash; your choice.</p>
 <p><strong>Layouts survive your hardware.</strong> Zones are remembered as grid cells rather than pixel coordinates, so a new resolution, a different monitor or a nudge of the GUI-scale slider re-derives your layout instead of scattering windows off-screen. <strong>Reset layout</strong> puts everything back, and it is a chat command as well as a button &mdash; because a button inside a window that ended up somewhere unclickable is no help at all.</p>
@@ -181,6 +191,18 @@
 <tr>
 <td><code>.pinmatrix resetlayout</code></td>
 <td>Forget every remembered window zone and put the windows back</td>
+</tr>
+<tr>
+<td><code>.pinmatrix unsnap [name]</code></td>
+<td>Release one window instead of all of them &mdash; no name lists what is snapped</td>
+</tr>
+<tr>
+<td><code>.pinmatrix rescue</code></td>
+<td>Bring every off-screen window back into view, anyone&#39;s window and not just ours</td>
+</tr>
+<tr>
+<td><code>.pinmatrix guiscale [n]</code></td>
+<td>Show or set the game&#39;s GUI scale, for when the screens are too big to read</td>
 </tr>
 <tr>
 <td><code>.pinmatrix tlpaths</code></td>

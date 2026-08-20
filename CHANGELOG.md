@@ -88,6 +88,20 @@ All notable changes to Pin Matrix are documented here.
   - **The four status readouts became tooltips** on their own section headers — traders, translocator
     paths, Herty cups, window layout — instead of one line along the bottom naming all four at once.
     A fact about one section is now read where you are already looking.
+- **The interface scale control is stepped, not dragged.** The slider on the Map windows layout
+  screen is now a readout with **<** and **>** either side. Dragging it rescaled the whole interface
+  live, so the control you were aiming at moved and changed size while you aimed — overshooting was
+  easy and correcting the overshoot worse. The arrows move an eighth at a time, which is the
+  granularity the game's own setting has.
+- **Colour and icon filters list the most-used first.** Counted over every pin rather than the
+  current filter: the counts on the labels already move with your other filters, and if the order
+  moved with them too, entries would swap places under the cursor as you typed. Colours tie-break on
+  hue so near-identical ones stay adjacent; icons tie-break alphabetically.
+- **Hiding the zones hands back the movable-ness it granted to windows nobody moved.** Showing the
+  grid makes every open window draggable, which means giving it a stored position — a mark left on
+  windows you never touched. Those are taken back when the zones go. Windows you dragged or snapped
+  keep theirs, because Vintage Story's only route back to "Fixed" also discards the position, and
+  losing your arrangement to tidy up a flag would be a poor trade.
 - **The zone grid goes up to 50x50**, from 20x20. The overlay draws a lattice rather than a quad per
   cell, so the finest grid is 102 lines, not 2500 rectangles.
 - **The pin table's colour and icon filters are labelled.** A multi-select dropdown with nothing
@@ -107,6 +121,14 @@ All notable changes to Pin Matrix are documented here.
   the drag had written the dragged position into that store, so the very recompose that moved the bar
   handed the title bar the old position and it went straight back. It only appeared to work after
   hiding the zones, because that removed the title bar and ended the tug of war.
+- **Windows snap to the grid in every button mode.** Stacked, Parallel and Floating did not snap
+  either — the same fault as the tab row, fixed in one branch and not the others. A movable title bar
+  restores its window to the stored position on every compose; dragging had written the dragged
+  position into that store, so the recompose the snap triggered handed it straight back. Also fixes
+  the floating-mode overlap dodge, which was being undone the instant it happened while the zones
+  were showing, and stops a snapped window being shuffled out of the cell it was just dropped on.
+- **The Herty cup colour and icon dropdowns no longer cut their text off**, matching the width the
+  trader rows already got.
 - **Windows keep their place when the grid is resized.** Changing 20x20 to 40x40 sent every snapped
   window to its old cell *number*, which is a different place — column 16 is four fifths of the way
   across a 20-wide grid and two fifths of the way across a 40-wide one. Each assignment now remembers

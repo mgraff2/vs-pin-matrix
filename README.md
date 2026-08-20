@@ -275,7 +275,7 @@ right of the world map as soon as one set exists, pages when there are more than
 snapped like any other window while **Layout Zones** is on. Capped at 24 (`MaxPinSets`).
 
 Window layout (1.5.0): `LayoutEnabled` (false — the feature and its map-screen **Layout Zones** button are
-opt-in; tick **Snap map-screen windows to a grid** on the editor's **Map options** screen), `LayoutCols` / `LayoutRows` (20 x 10, anything from 1 to 20 each
+opt-in; tick **Snap map-screen windows to a grid** on the editor's **Map options** screen), `LayoutCols` / `LayoutRows` (20 x 10, anything from 1 to 50 each
 way — the screen is split evenly by whatever you pick), (in tab-row mode the strip is the row your Pin Matrix
 button bar is snapped to — drag the bar onto a row and everything else dropped there spreads evenly along it, the
 column you drop on deciding only the order; there is no row number to set),
@@ -283,10 +283,11 @@ column you drop on deciding only the order; there is no row number to set),
 HUD is sitting in so snapped windows never cover one; untick to use the whole screen),
 `LayoutHudCoverageThreshold` (25 — percent of a cell a HUD must cover before that cell is disabled; any-overlap
 would be far too aggressive, since the hotbar is wide but short and clips a whole row of cells),
-`LayoutButtonMode` / `LayoutButtonCol` / `LayoutButtonCellRow` (how the map-screen buttons are packaged, and the
-cell they anchor to — "stacked", "parallel", "row" or "float"), and `LayoutAssignments` (the remembered zones,
-stored as **cell indices** rather than coordinates so a resolution or GUI-scale change re-derives the layout
-instead of stranding windows at coordinates that meant something on other hardware).
+`LayoutButtonMode` (how the map-screen buttons are packaged — "stacked", "parallel", "row" or "float"; there is no
+configured cell any more, since you drag them where you want them), and `LayoutAssignments` (the remembered zones,
+stored as **cell indices plus the grid they were dropped on** rather than coordinates, so a resolution, GUI-scale or
+grid-size change re-derives the layout — a window four fifths of the way across a 20-wide grid stays four fifths of
+the way across a 40-wide one — instead of stranding windows at coordinates that meant something on other hardware).
 
 Window positions themselves are written to vanilla's own `clientsettings.json` (`dialogPositions`), the same
 store its movable-dialog title bars use. Both files are per machine and nothing syncs, so a laptop and a
