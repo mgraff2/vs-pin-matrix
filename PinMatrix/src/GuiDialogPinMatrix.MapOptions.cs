@@ -226,19 +226,22 @@ namespace PinMatrix
             // Colour and icon on one row, both drawn rather than spelled: the same rule the trader
             // rows now follow. The title prefix and whether markers are pinned stay in pinmatrix.json
             // — they are typed once and never looked at again.
+            // Both 250 wide, the same as the trader rows and for the same reason: a dropdown shows
+            // its selected label inside itself, and these run to swatch/glyph + name + "(default)".
+            // The icon list is the wider of the two — "skull_and_crossbones" is a real icon code.
             c.AddStaticText("Marker", font, EB(36, y + 4, 70, 25));
             string[] hcCols = HertyColorValues();
             c.AddDropDown(hcCols, ColorLabels(hcCols, DefaultHertyColor),
                 Math.Max(0, Array.IndexOf(hcCols, NormHex(config.HertyCupMarkerColor))),
-                OnHertyCupColorChanged, EB(110, y, 140, 26), "hccolor");
+                OnHertyCupColorChanged, EB(110, y, 250, 26), "hccolor");
             string[] hcIcons = HertyIconValues();
             c.AddDropDown(hcIcons, IconLabels(hcIcons, DefaultHertyIcon),
                 Math.Max(0, Array.IndexOf(hcIcons, config.HertyCupMarkerIcon ?? DefaultHertyIcon)),
-                OnHertyCupIconChanged, EB(258, y, 190, 26), "hcicon");
-            c.AddSmallButton("Reset", OnResetHertyMarker, EB(456, y, 74, 26), EnumButtonStyle.Small);
+                OnHertyCupIconChanged, EB(368, y, 250, 26), "hcicon");
+            c.AddSmallButton("Reset", OnResetHertyMarker, EB(626, y, 74, 26), EnumButtonStyle.Small);
             c.AddHoverText("The colour and icon every cup marker gets. Both lists show the real thing "
                 + "rather than a code — the icons are every waypoint icon the game has, drawn.",
-                tip, 320, EB(36, y, 494, 28).FlatCopy(), "tiphcmarker");
+                tip, 320, EB(36, y, 664, 28).FlatCopy(), "tiphcmarker");
             y += 34;
 
             c.AddInset(EB(4, y, DW - 8, 2), 2);

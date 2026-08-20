@@ -144,6 +144,23 @@ Four things about it are easy to break and expensive to rediscover:
   (`Snap` → `LastSnapEvicted`) rather than parking it underneath. `.pinmatrix unsnap [name]`
   releases one window by substring match; `resetlayout` stays the clear-everything hammer.
   `SetStretchWidth` takes the *inner* width — the window adds 8px of padding of its own, so callers pass `rect.W - 8` or the bar lands short.
+- **Moving one of our own windows means pinning vanilla's store FIRST — every time, no exceptions.**
+  `GuiElementDialogTitleBar` restores its window to `GetDialogPosition` on every compose, and moving
+  a window recomposes it. So `SetPosition` alone loses: the store still holds wherever the drag left
+  it, and the title bar puts the window back there on the very compose our move triggered. The
+  window only obeys once the title bar goes away — which is what "it snaps into place after I hide
+  zones" means, and it was reported twice, for the tab row and then again for Stacked / Parallel /
+  Floating, because the fix was applied in one branch and not the others.
+  `HudPinMatrixButtonWindow.PinPositionForTitleBar(x, y)` writes our position in **as the seed**, so
+  the two agree and `TryGetPlayerPosition` still correctly does not read it as a placement. Call it
+  immediately before every `SetPosition` on one of our windows: the snapped-zone branch, the tab-row
+  strip, and the floating-mode dodge in `SpreadFloatingButtons` all need it. Skip the move entirely
+  while the left mouse button is down, or the per-tick re-place erases the drag before
+  `HudLayoutOverlay.TrackDrag` can see it and no drop is ever detected.
+- **A snapped window is a fixed point for the floating spreader too.** Pinning the store makes the
+  stored position ours rather than the player's, so `PlayerPlaced` goes false — `SpreadFloatingButtons`
+  must therefore also treat "has a zone assignment" as fixed, or it shuffles a window straight out of
+  the cell it was just dropped on.
 - **Nothing is ever resized, our own window included.** No resizable-dialog concept exists in the
   engine. Zones move windows and anchor them by their top-left corner; they never change a size.
   An earlier version did rebuild our own table at a different row count to fill its zone

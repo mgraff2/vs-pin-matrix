@@ -98,6 +98,15 @@ namespace PinMatrix
 
         /// <summary>Set when we have written positions that vanilla has not been asked to flush yet.</summary>
         bool positionsUnflushed;
+
+        /// <summary>
+        /// Positions we wrote purely to unlock another mod's title bar, and what we wrote.
+        ///
+        /// Making a window movable means giving it a stored position, so showing the zones once
+        /// leaves a mark on every dialog that was open at the time — including ones the player never
+        /// touched. <see cref="ClearUntouchedSeeds"/> takes those back when the zones go.
+        /// </summary>
+        readonly Dictionary<string, Vec2i> seededPositions = new Dictionary<string, Vec2i>();
         long lastFlushAt;
 
         /// <summary>Don't rewrite the settings file more than this often.</summary>
@@ -501,11 +510,61 @@ namespace PinMatrix
                     if (compo == null || !compo.Enabled || b == null || compo.DialogName == null) continue;
                     if (capi.Gui.GetDialogPosition(compo.DialogName) != null) continue;
 
-                    capi.Gui.SetDialogPosition(compo.DialogName,
-                        new Vec2i((int)Math.Round(b.absX / scale), (int)Math.Round(b.absY / scale)));
+                    var seed = new Vec2i((int)Math.Round(b.absX / scale), (int)Math.Round(b.absY / scale));
+                    capi.Gui.SetDialogPosition(compo.DialogName, seed);
+                    seededPositions[compo.DialogName] = seed;
                     positionsUnflushed = true;
                 }
             }
+        }
+
+        /// <summary>
+        /// Takes back the movable-ness we granted to windows that were never actually moved, and
+        /// returns how many.
+        ///
+        /// WHY THIS IS NOT "PUT EVERYTHING BACK TO FIXED". It cannot be. Decompiled 1.22.7:
+        /// GuiElementDialogTitleBar.movable is a private field with no setter, and vanilla's only
+        /// route to Fixed — its own title-bar menu — runs the "auto" branch, which restores
+        /// parentBoundsBefore and calls SetDialogPosition(name, null). Vanilla's definition of Fixed
+        /// is literally "forget where you were put and go back where you started", so making every
+        /// window Fixed when the zones are hidden would throw away the arrangement that was the
+        /// entire point of showing them. That trade-off was investigated and rejected; see CLAUDE.md.
+        ///
+        /// What IS safe is the subset where nothing is lost: a window still sitting exactly where we
+        /// seeded it has not been moved by anybody, so clearing its seed returns it to Fixed *and*
+        /// leaves it precisely where it already is. A window that was dragged, or that has a zone,
+        /// keeps its stored position and stays movable — losing those is the thing this must not do.
+        ///
+        /// The tolerance is not slack for its own sake: a movable title bar rewrites its own stored
+        /// position on its first rendered frame, and that round-trips through an int, so a window
+        /// nobody touched can come back a pixel out.
+        /// </summary>
+        public int ClearUntouchedSeeds()
+        {
+            const int Tolerance = 2;
+
+            var names = new List<string>(seededPositions.Keys);
+            int cleared = 0;
+
+            foreach (string name in names)
+            {
+                var seed = seededPositions[name];
+                seededPositions.Remove(name);
+
+                // Ours to place: it keeps its position, and its title bar with it.
+                if (Find(name) != null) continue;
+
+                var stored = capi.Gui.GetDialogPosition(name);
+                if (stored == null) continue;
+                if (Math.Abs(stored.X - seed.X) > Tolerance || Math.Abs(stored.Y - seed.Y) > Tolerance) continue;
+
+                capi.Gui.SetDialogPosition(name, null);
+                positionsUnflushed = true;
+                cleared++;
+            }
+
+            if (cleared > 0) FlushPositionsNow();
+            return cleared;
         }
 
         /// <summary>Flushes immediately, for shutdown and for the moment the player stops arranging.</summary>

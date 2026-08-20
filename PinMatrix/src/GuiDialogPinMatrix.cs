@@ -243,13 +243,28 @@ namespace PinMatrix
         /// The dropdown lists only colours some waypoint actually uses — the full vanilla palette
         /// plus every custom colour is an unreadable wall of hex. Recomputed whenever the waypoint
         /// list changes, dropping any filtered colour that no longer exists.
+        ///
+        /// ORDERED BY HOW MANY PINS USE IT, most first, because the colour you want is nearly always
+        /// one of the handful you use constantly. Counted over <em>every</em> pin rather than over
+        /// the current filter: the label counts move with the other filters, and if the order moved
+        /// with them too, entries would swap places under the cursor every time you typed in the
+        /// search box. Ties fall back to the hue walk, which keeps near-identical colours adjacent
+        /// within a tie group — lexicographic hex order scatters them, which is what makes a long
+        /// list hard to scan.
         /// </summary>
         void RebuildColorFilterValues()
         {
-            var hexes = allRows
-                .Select(r => WpCommands.ColorHex(r.Wp.Color))
-                .Distinct()
-                .OrderBy(HueKey)
+            var totals = new Dictionary<string, int>();
+            foreach (var r in allRows)
+            {
+                string h = WpCommands.ColorHex(r.Wp.Color);
+                totals.TryGetValue(h, out int n);
+                totals[h] = n + 1;
+            }
+
+            var hexes = totals.Keys
+                .OrderByDescending(h => totals[h])
+                .ThenBy(HueKey)
                 .ThenBy(h => h, StringComparer.Ordinal)
                 .ToArray();
 
@@ -322,12 +337,23 @@ namespace PinMatrix
         /// is strictly better than dropping the entry: the pins using that icon still exist and
         /// still need a way to be selected.
         /// </summary>
+        /// <summary>
+        /// Same ordering rule as the colours: most-used first, counted over every pin so the list
+        /// does not reshuffle as the other filters change. Alphabetical within a tie.
+        /// </summary>
         void RebuildIconFilterValues()
         {
-            var codes = allRows
-                .Select(r => WpCommands.SafeIcon(r.Wp.Icon))
-                .Distinct()
-                .OrderBy(c => c, StringComparer.OrdinalIgnoreCase)
+            var totals = new Dictionary<string, int>();
+            foreach (var r in allRows)
+            {
+                string c = WpCommands.SafeIcon(r.Wp.Icon);
+                totals.TryGetValue(c, out int n);
+                totals[c] = n + 1;
+            }
+
+            var codes = totals.Keys
+                .OrderByDescending(c => totals[c])
+                .ThenBy(c => c, StringComparer.OrdinalIgnoreCase)
                 .ToArray();
 
             // A list menu with no entries composes a zero-sized surface, so keep one placeholder

@@ -148,7 +148,15 @@ namespace PinMatrix
         /// </summary>
         public void SetLayoutPinned(bool on)
         {
+            bool was = layoutPinned;
             layoutPinned = on && config.LayoutEnabled;
+
+            // Hiding the zones hands back the movable-ness we granted to windows nobody actually
+            // moved. Only those: a window that was dragged or snapped keeps its position, because
+            // vanilla's only route back to Fixed also throws the position away. See
+            // LayoutManager.ClearUntouchedSeeds.
+            if (was && !layoutPinned) layout?.ClearUntouchedSeeds();
+
             UpdateLayoutOverlay();
             RefreshButtons();
         }
@@ -440,7 +448,16 @@ namespace PinMatrix
                 {
                     var zone = layout.ZoneFor(snapped);
                     b.SetStretchWidth(0);
-                    b.SetPosition(zone.X, zone.Y);
+                    // Same tug-of-war the tab row was losing, and for the same reason: the drag wrote
+                    // its own position into vanilla's store, and a movable title bar restores from
+                    // that store on every compose — including the compose our move triggers. Point
+                    // the store at the cell first and the two agree. Stacked, Parallel and Floating
+                    // all land here, which is why none of them appeared to snap.
+                    if (!capi.Input.MouseButton.Left)
+                    {
+                        b.PinPositionForTitleBar(zone.X, zone.Y);
+                        b.SetPosition(zone.X, zone.Y);
+                    }
                     continue;
                 }
 
@@ -546,7 +563,11 @@ namespace PinMatrix
                 // Player-placed windows are fixed points: they never move, they only occupy space.
                 // Again their own placement, not the one layout mode seeds to unlock dragging —
                 // otherwise showing the grid once would permanently stop the buttons dodging.
-                if (b.PlayerPlaced)
+                // A snapped window counts as fixed too. It is not "player placed" — pinning the
+                // store to its cell above makes the stored position ours rather than theirs — but a
+                // cell it was dropped on is every bit as deliberate, and shuffling it out of that
+                // cell to dodge an overlap would undo the drop.
+                if (b.PlayerPlaced || layout.Find(b.DialogName) != null)
                 {
                     taken.Add(new[] { cur.X, cur.Y, cur.W, cur.H });
                     continue;
@@ -569,6 +590,11 @@ namespace PinMatrix
                     if (y + cur.H > screenH) break;
                     if (Overlaps(taken, x, y, cur.W, cur.H)) continue;
 
+                    // Pinned first, as everywhere else we move one of our own windows. While the
+                    // zones are up these windows carry a seeded stored position, and a title bar
+                    // restores from it on the compose our move triggers — so without this the dodge
+                    // would be undone the instant it happened, but only while the grid was showing.
+                    b.PinPositionForTitleBar(x, y);
                     b.SetPosition(x, y);
                     taken.Add(new[] { x, y, cur.W, cur.H });
                     placed = true;

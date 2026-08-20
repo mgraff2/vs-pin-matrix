@@ -96,16 +96,25 @@ namespace PinMatrix
             // not make the windows smaller - the scale is the only lever, and it is otherwise four
             // clicks deep in Settings, behind closing the map.
             c.AddStaticText("Interface scale", font, EB(4, y + 4, 130, 25));
-            c.AddSlider(OnGuiScaleChanged, EB(140, y + 4, 200, 20), "layoutguiscale");
-            c.AddDynamicText(GuiScaleText(), font, EB(352, y + 4, 320, 25), "layoutguiscaletext");
+            c.AddSmallButton("<", () => StepGuiScale(-1), EB(140, y, 40, 26), EnumButtonStyle.Small);
+
+            // A READOUT, not a control — disabled in RestoreLayoutState, and its callback is a stub.
+            // Dragging it rescaled the whole interface live, under the cursor: the thing you are
+            // aiming at moves and changes size while you aim, so overshooting is easy and correcting
+            // the overshoot is worse. The arrows step one notch of the game's own ladder instead,
+            // which is the granularity the setting actually has.
+            c.AddSlider(_ => true, EB(186, y + 4, 200, 20), "layoutguiscale");
+
+            c.AddSmallButton(">", () => StepGuiScale(1), EB(392, y, 40, 26), EnumButtonStyle.Small);
+            c.AddDynamicText(GuiScaleText(), font, EB(442, y + 4, 300, 25), "layoutguiscaletext");
             c.AddHoverText(
                 "The game's own GUI scale, the same setting as Settings > Interface > GUI scale and "
                 + "the same range. Every window is a fixed number of pixels across, so this is the "
                 + "only thing that changes how much of the screen they take. Moving it also re-sets "
                 + "the reference \"Fit interface scale to the screen\" measures from on the Map "
                 + "options screen - so put the interface where you want it here, and the fit follows "
-                + "from that.",
-                tip, 360, EB(4, y, 340, 28).FlatCopy(), "tipguiscale");
+                + "from that. The bar is a readout: step it with the arrows, an eighth at a time.",
+                tip, 360, EB(4, y, 430, 28).FlatCopy(), "tipguiscale");
             y += 34;
 
             c.AddInset(EB(4, y, DW - 8, 2), 2);
@@ -176,6 +185,11 @@ namespace PinMatrix
             {
                 slider.SetValues(Layout.ClampStep(LayoutManager.ScaleToStep(RuntimeEnv.GUIScale)),
                                  LayoutManager.MinScaleStep, Layout.MaxScaleStep(), 1);
+                // Shows its number without being hovered, since nothing is going to hover a control
+                // that cannot be used.
+                slider.ShowTextWhenResting = true;
+                // Last: the setter recomposes the handle and the fill, so it has to see the values.
+                slider.Enabled = false;
             }
         }
 
@@ -298,41 +312,33 @@ namespace PinMatrix
             return true;
         }
 
-        int pendingScaleStep = -1;
-        long scaleChangeSeq;
-
         /// <summary>
-        /// The slider is in vanilla's units - the scale times eight - so its whole steps are the
-        /// same 0.125 the game's own moves in, and it can never land between two values the game
-        /// would show.
+        /// Moves the game's GUI scale one notch, clamped to the range vanilla's own slider allows.
         ///
-        /// DEBOUNCED, because applying a scale recomposes every open dialog and a drag fires this
-        /// once per step. Vanilla solves the same problem with GuiElementSlider.TriggerOnlyOnMouseUp,
-        /// which is `internal` and therefore not ours to call - and reaching for it by reflection is
-        /// exactly the thing this mod has refused to do elsewhere. So: every change restarts a short
-        /// timer and only the last one is applied. The readout follows the handle immediately even
-        /// though the scale has not been set yet, or the number would lag what you are dragging.
+        /// A notch is an eighth, which is exactly what the game's setting moves in — so this can
+        /// never land on a value the game itself would not show. Applied straight away rather than
+        /// debounced: one press is one step, and a step you have to wait for is not a step.
+        ///
+        /// Stepping is also the player saying "this size, on this screen", which is precisely what
+        /// auto-fit measures from — hence the re-capture, which is what stops repeated automatic
+        /// fits drifting away from anything anyone chose.
         /// </summary>
-        bool OnGuiScaleChanged(int step)
+        bool StepGuiScale(int delta)
         {
             if (Layout == null) return true;
 
-            pendingScaleStep = Layout.ClampStep(step);
-            long seq = ++scaleChangeSeq;
-            SingleComposer?.GetDynamicText("layoutguiscaletext")?.SetNewText(ScaleText(pendingScaleStep / 8.0));
+            int step = Layout.ClampStep(LayoutManager.ScaleToStep(RuntimeEnv.GUIScale) + delta);
+            if (step == LayoutManager.ScaleToStep(RuntimeEnv.GUIScale)) return true;   // already at the end
 
-            capi.Event.RegisterCallback(_ =>
-            {
-                if (seq != scaleChangeSeq || pendingScaleStep < 0 || Layout == null) return;
-                Layout.SetGuiScale(pendingScaleStep / 8.0);
-                // Moving it by hand is the player saying "this size, on this screen" - exactly what
-                // auto-fit needs as its reference, and re-capturing here is what stops repeated fits
-                // from drifting away from anything anyone chose.
-                Layout.CaptureScaleBase();
-                pendingScaleStep = -1;
-                SingleComposer?.GetDynamicText("layoutguiscaletext")?.SetNewText(GuiScaleText());
-            }, 250);
+            Layout.SetGuiScale(step / 8.0);
+            Layout.CaptureScaleBase();
 
+            // Setting the scale recomposes every open dialog, this one included, and the recompose
+            // runs RestoreLayoutState which resets both of these anyway. Harmless either way, and
+            // right if the recompose has not happened yet.
+            var c = SingleComposer;
+            c?.GetSlider("layoutguiscale")?.SetValue(step);
+            c?.GetDynamicText("layoutguiscaletext")?.SetNewText(GuiScaleText());
             return true;
         }
 
