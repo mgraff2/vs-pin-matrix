@@ -1,11 +1,15 @@
 <!-- Paste into the "changelog" field of the ModDB release. Newest version first;
      keep older entries so the page reads as a history. -->
 
-<p style="font-size: 1.1em;"><strong>1.7.0 &mdash; save a filter, get a map filter.</strong> Two releases in one: 1.6.0 was built and tested but never published, so its <strong>pin sets</strong> and its much quieter editor arrive here alongside 1.7.0&#39;s own additions. Filter the pin table however you like, save it with a name, and it becomes a switch in a panel down the side of the world map &mdash; one click hides everything it matches, another brings it all back, and the filter runs again fresh every time so it never stops covering the pins you add later.</p>
+<p style="font-size: 1.1em;"><strong>1.7.1 &mdash; trader markers land on the trader.</strong> A fix release. If automatic trader marking ever left you a pin hundreds of thousands of blocks from anywhere, or kept marking the same trader every time you came home, this is the one: the scan was reading the trader&#39;s position a few frames too early, while the game was still easing it into place from the world origin. It now waits until the trader has held still. Also: the &quot;Marked&quot; chat line reads in the same coordinates as your HUD, and nothing is scanned before your waypoint list has arrived. Below it, 1.7.0 and the never-published 1.6.0 &mdash; <strong>pin sets</strong>, a quieter editor, Herty cup markers and an interface that fits the screen.</p>
 <table class="stdtable" style="width: 100%;">
 <tbody>
 <tr>
-<td style="width: 26%;"><strong>Pin sets</strong> <em>(1.6.0)</em></td>
+<td style="width: 26%;"><strong>Trader markers fixed</strong> <em>(1.7.1)</em></td>
+<td>No more pins at scaled-down positions far outside the map, no more re-marking the same trader on every reload, and chat coordinates that match your HUD.</td>
+</tr>
+<tr>
+<td><strong>Pin sets</strong> <em>(1.6.0)</em></td>
 <td>Save any filter as a named switch in a panel beside the world map. Click to hide everything it matches, click again to bring it back. It stores the question, not the answer, so it covers pins you mark later.</td>
 </tr>
 <tr>
@@ -30,6 +34,12 @@
 </tr>
 </tbody>
 </table>
+<h3>1.7.1</h3>
+<ul>
+<li><strong>Trader markers no longer land hundreds of thousands of blocks away, and stop re-marking the same trader.</strong> The scan read the trader&#39;s <em>rendered</em> position, which the game smooths towards the server&#39;s from wherever it last was &mdash; and for a trader whose chunk has only just loaded, that is the world origin. Caught mid-smoothing, a trader at -42, 138, 91 produced pins at -194330 and -33810 (its true position scaled by 0.62 and 0.93), too far from the real pin ever to count as already marked, so every reload of that chunk minted another. A trader is now marked only once it has reported the same position on two consecutive scans, which a half-smoothed position never does. Bogus pins already on your map are ordinary waypoints: sort the table by distance and they are at the far end.</li>
+<li><strong>The &quot;Marked &hellip; at&quot; chat line uses the same coordinates as the HUD.</strong> Trader and Herty cup marks printed absolute world positions, six-digit numbers, while the coordinate HUD, the table and the translocator lines are all relative to spawn. All four now agree.</li>
+<li><strong>No trader scan before the waypoint list has arrived.</strong> The game only sends your waypoints to the client in reply to a map view-change, so the first moments of a session compared traders against an empty list and re-marked every one in sight. The scan now asks for the list itself and waits for it before marking anything.</li>
+</ul>
 <h3>1.7.0</h3>
 <ul>
 <li><strong>Fit interface scale to the screen.</strong> No window in Vintage Story resizes itself, so on a screen half as wide every dialog takes twice the share of it &mdash; and the only cure is the GUI scale setting, four clicks deep in Settings. Switch this on (<strong>Map options</strong>, off by default) and the scale is re-derived whenever the screen changes size. It measures from a reference: the scale you last set by hand and the screen you set it on, so going to a smaller screen and back returns you to <em>exactly</em> where you were rather than somewhere close. A scale you set yourself &mdash; including in Vintage Story&#39;s own settings &mdash; becomes the new reference.</li>
