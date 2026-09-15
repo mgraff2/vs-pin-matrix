@@ -293,6 +293,31 @@ are load-bearing:
   the log's own `Variant["wood"]` names the tree), so no reference to the Herty Cups assembly exists
   and none should be added.
 
+## Trader markers (1.7.1) — read `ServerPos`, and not before the waypoints have arrived
+
+`TraderMarkers.Scan`. Two traps, both found in the field (Sept 2026) as "it keeps re-marking traders
+and the coordinates are hundreds of thousands of blocks out":
+
+- **`Entity.Pos` on the client is the rendered position, not where the entity is.** Every trader
+  carries `EntityBehaviorInterpolatePosition`, which smooths `Pos` towards the server's position from
+  wherever it last was — and for an entity the client has only just received, that is the world
+  origin. For the first frames after a trader's chunk loads, `Pos` is the true position scaled by some
+  fraction (measured: 0.62 and 0.93 of a trader at 512330, 138, 514078 gave marks at 318042, 86,
+  319127 and 478562, 129, 480194 — same factor on x, y and z to five digits). A 250ms tick catches
+  that window, and a pin that far out can never match the real one, so every chunk reload minted
+  another. **There is no other field to read**: in 1.22 `Entity.ServerPos` and `SidedPos` are
+  `[Obsolete]` aliases of `Pos` (`ServerPos => Pos`), so the first attempt at this fix — read
+  `ServerPos`, refuse an entity whose `Pos` disagrees with it — compiled with a warning and did
+  nothing. `SettledPosition` instead trusts a position only when the same entity id reported it
+  (within a few blocks) on the previous scan too; the first sighting is always refused. Give any
+  future entity scanner the same treatment.
+- **The client's waypoint list is empty until the map sends a view-change packet** (the same fact
+  `WaypointService.RequestResync` documents), so a scan in the first ticks of a session compares
+  against nothing and re-marks everything loaded. `WaypointsKnown` asks for a resync and waits for
+  either the list or a five-second grace (for a player who genuinely has none — nothing to duplicate).
+- Chat lines print **spawn-relative** x/z via `svc.RelX/RelZ`, like the HUD, the table and the
+  translocator lines. Absolute six-digit numbers next to the HUD's read as a bug even when correct.
+
 ## Translocator marching ants (1.7.0) — why the clip is not optional
 
 `TranslocatorPathComponent.DrawAnts`. A recent path is drawn as alternating bands crawling from the

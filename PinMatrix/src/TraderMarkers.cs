@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using Vintagestory.API.Client;
 using Vintagestory.API.Common;
+using Vintagestory.API.Common.Entities;
 using Vintagestory.API.MathTools;
 using Vintagestory.GameContent;
 
@@ -17,6 +18,27 @@ namespace PinMatrix
     /// to maintain, and nothing left behind if the feature is switched off later.
     ///
     /// Off by default. Writing waypoints onto someone's map without being asked is not a default.
+    ///
+    /// WHERE A TRADER IS. <c>Entity.Pos</c> on the client is the *rendered* position, and the
+    /// interpolation behaviour every trader carries smooths it towards each server update from
+    /// wherever it last was — which, for an entity the client has only just received, is the world
+    /// origin. For the first frames after a trader's chunk loads, <c>Pos</c> is therefore the real
+    /// position scaled by some fraction (measured in the field: 0.62 and 0.93 of a trader at
+    /// 512330, 138, 514078 gave marks at 318042, 86, 319127 and 478562, 129, 480194 — hundreds of
+    /// thousands of blocks from anything). A 250ms tick catches that window often enough, and a mark
+    /// that far out can never match the real waypoint, so the same trader got a fresh bogus pin every
+    /// time its chunk reloaded. There is no second field to prefer: in 1.22 <c>ServerPos</c> and
+    /// <c>SidedPos</c> are obsolete aliases of <c>Pos</c>. So the scan trusts a position only once
+    /// the same entity has reported it on two consecutive scans (<see cref="SettledPosition"/>): a
+    /// mid-smoothing sample moves by a large fraction of the whole coordinate between ticks, while a
+    /// real trader ambles a block or two.
+    ///
+    /// WHEN TO SCAN. Not before the player's waypoints have arrived. The client is only sent them in
+    /// reply to a map view-change packet (see <see cref="WaypointService.RequestResync"/>), so the
+    /// first ticks of a session see an empty list, and against an empty list every loaded trader
+    /// looks unmarked. The scan asks for a resync itself and waits for either the list or a short
+    /// grace period — the grace is for a player who genuinely has no waypoints yet, for whom an
+    /// early scan cannot duplicate anything.
     /// </summary>
     public class TraderMarkers
     {
@@ -73,6 +95,21 @@ namespace PinMatrix
         readonly List<Vec3d> pending = new List<Vec3d>();
 
         public int MarkedThisSession { get; private set; }
+
+        /// <summary>
+        /// How far an entity may move between two scans and still count as settled. A trader
+        /// ambles; anything beyond a few blocks in 250ms is interpolation, not movement.
+        /// </summary>
+        const double SettleDistance = 4;
+
+        /// <summary>Where each trader was on the previous scan, by entity id, and this scan's samples.</summary>
+        Dictionary<long, Vec3d> lastSeen = new Dictionary<long, Vec3d>();
+        Dictionary<long, Vec3d> seenNow = new Dictionary<long, Vec3d>();
+
+        /// <summary>How long to wait for the first waypoint sync before scanning anyway.</summary>
+        const long SyncGraceMs = 5000;
+
+        long resyncAskedAt = -1;
 
         public TraderMarkers(ICoreClientAPI capi, PinMatrixConfig config, WaypointService svc)
         {
@@ -154,6 +191,7 @@ namespace PinMatrix
         {
             if (!config.TraderMarkersEnabled) return;
             if (capi.World?.Player == null || svc.Layer == null) return;
+            if (!WaypointsKnown()) return;
 
             var entities = capi.World.LoadedEntities;
             if (entities == null) return;
@@ -175,7 +213,7 @@ namespace PinMatrix
                 string role = RoleOf(entity.Code?.Path);
                 if (role == null) continue;
 
-                var pos = entity.Pos?.XYZ;
+                var pos = SettledPosition(entity.EntityId, entity.Pos);
                 if (pos == null) continue;
 
                 if (maxDist > 0 && playerPos != null &&
@@ -193,8 +231,51 @@ namespace PinMatrix
                     title));
 
                 MarkedThisSession++;
-                capi.ShowChatMessage(WpCommands.ChatSafe($"[Pin Matrix] Marked {title} at {pos.X:0}, {pos.Y:0}, {pos.Z:0}"));
+                // Spawn-relative, like the coordinate HUD, the table and the translocator lines —
+                // an absolute position reads as nonsense next to the numbers on screen.
+                capi.ShowChatMessage(WpCommands.ChatSafe(
+                    $"[Pin Matrix] Marked {title} at {svc.RelX(pos.X):0}, {pos.Y:0}, {svc.RelZ(pos.Z):0}"));
             }
+
+            // This scan's samples become the next scan's baseline; traders that have gone are
+            // dropped with the old dictionary's contents.
+            (lastSeen, seenNow) = (seenNow, lastSeen);
+            seenNow.Clear();
+        }
+
+        /// <summary>
+        /// The entity's position if it has held still since the previous scan, else null. The first
+        /// sighting of any trader is always null — that is the tick the smoothing lies on. See the
+        /// class remarks for why <c>Pos</c> cannot be trusted on its own.
+        /// </summary>
+        Vec3d SettledPosition(long entityId, EntityPos p)
+        {
+            if (p == null) return null;
+            var pos = new Vec3d(p.X, p.Y, p.Z);
+            seenNow[entityId] = pos;
+
+            if (!lastSeen.TryGetValue(entityId, out var before)) return null;
+            if (before.SquareDistanceTo(pos) > SettleDistance * SettleDistance) return null;
+            return pos;
+        }
+
+        /// <summary>
+        /// True once the client holds the player's waypoints, or once it has asked for them and
+        /// waited long enough to conclude there are none. Until then a scan compares against an
+        /// empty list and would re-mark every trader in sight on every login.
+        /// </summary>
+        bool WaypointsKnown()
+        {
+            if (svc.SyncedCount > 0) return true;
+
+            long now = capi.World.ElapsedMilliseconds;
+            if (resyncAskedAt < 0)
+            {
+                resyncAskedAt = now;
+                svc.RequestResync();
+                return false;
+            }
+            return now - resyncAskedAt >= SyncGraceMs;
         }
 
         /// <summary>

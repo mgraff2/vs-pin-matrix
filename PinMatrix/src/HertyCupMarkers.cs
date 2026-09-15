@@ -209,8 +209,9 @@ namespace PinMatrix
                 title));
 
             MarkedThisSession++;
+            // Spawn-relative, like the coordinate HUD and every other line this mod prints.
             capi.ShowChatMessage(WpCommands.ChatSafe(
-                $"[Pin Matrix] Marked {title} at {at.X:0}, {at.Y:0}, {at.Z:0}"));
+                $"[Pin Matrix] Marked {title} at {svc.RelX(at.X):0}, {at.Y:0}, {svc.RelZ(at.Z):0}"));
         }
 
         /// <summary>

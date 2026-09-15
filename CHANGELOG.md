@@ -2,6 +2,27 @@
 
 All notable changes to Pin Matrix are documented here.
 
+## [1.7.1] — 2026-09-15
+
+### Fixed
+- **Trader markers no longer land hundreds of thousands of blocks away, and stop re-marking the same
+  trader.** The scan read the trader's *rendered* position, which the client smooths towards the
+  server's from wherever it last was — and for a trader whose chunk has only just loaded, that is
+  the world origin. Caught mid-smoothing, a trader at -42, 138, 91 produced pins at -194330 and
+  -33810 (the true position scaled by 0.62 and 0.93), too far from the real pin to ever count as
+  already marked, so every reload of that chunk minted another. The scan now marks a trader only
+  once it has reported the same position on two consecutive scans, which a half-smoothed position
+  never does and a trader ambling round its cart always does.
+  Bogus pins already made can be found in the editor by sorting on distance; they are ordinary
+  waypoints and delete like any other.
+- **The "Marked … at" chat line uses the same coordinates as the HUD.** Trader and Herty cup marks
+  printed absolute world positions (six-digit numbers) while the coordinate HUD, the table and the
+  translocator lines are all relative to spawn. All four now agree.
+- **No trader scan before the waypoint list has arrived.** The client is only sent its waypoints in
+  reply to a map view-change, so the first ticks of a session compared traders against an empty list
+  and re-marked every one in sight. The scan now asks for the list itself and waits for it (or five
+  seconds, for a player who has none) before marking anything.
+
 ## [1.7.0] — 2026-08-20
 
 ### Added
@@ -376,6 +397,7 @@ Initial release for Vintage Story 1.22.x.
 - Map screen button ("Pin Matrix Editor") and bindable hotkey.
 - Fully client-side — no server-side install required.
 
+[1.7.1]: https://github.com/mgraff2/vs-pin-matrix/releases/tag/v1.7.1
 [1.5.0]: https://github.com/mgraff2/vs-pin-matrix/releases/tag/v1.5.0
 [1.4.0]: https://github.com/mgraff2/vs-pin-matrix/releases/tag/v1.4.0
 [1.3.2]: https://github.com/mgraff2/vs-pin-matrix/releases/tag/v1.3.2
